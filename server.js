@@ -3,19 +3,26 @@
  * Clients -> Socket.IO Clusters -> Server Core(THIS APPLICATION)
  */
 var config = require("./config");
-var knex = require('knex')({
-	client: 'mysql',
-	connection: {
-		host     : config.db_host,
-		user     : config.db_user,
-		password : config.db_pass,
-		database : config.db_name
-	},
-	pool:{
-		min: 2,
-		max: 10
-	}
-});
+var request = require("request");
+var commands = require("./obj/commands");
+var room = require("./obj/room");
+var parser = require("./obj/parsers");
+var crypto = require('crypto');
+var fs = require('fs');
+//var knex = require('knex')({
+//	client: 'mysql',
+//	connection: {
+//		host     : config.db_host,
+//		user     : config.db_user,
+//		password : config.db_pass,
+//		database : config.db_name
+//	},
+//	pool:{
+//		min: 2,
+//		max: 10
+//	}
+//});
+global.phploc = "http://127.0.0.1:8888/";
 process.on('uncaughtException', function (error) {
 	//console.log("UNHANDLED ERROR! Logged to file.");
 	throw (error);
@@ -26,7 +33,7 @@ var webServer = require('http').createServer(function (req, res) {
 	res.writeHead(404);
 	res.end("No resource found.");
 });
-var io = require('socket.io')(webServer);
+global.io = require('socket.io')(webServer);
 webServer.listen(config.listen_port);
 
 
@@ -34,23 +41,39 @@ io.use(function(socket,next){
 	var token = socket.handshake.query.auth;
 	next();
 });
-var rooms = [];
-var clusters = {};
-io.on('connection', function(socket){
-	socket.on("online",function(data,callback){
-		socket.cluster_id = data.cluster_id;
-		if (clusters[socket.cluster_id] == undefined){
-			clusters[socket.cluster_id] = {};
-			callback({ok:true});
+var rooms = {};
+global.clusters = {};
+io.on('connection', function(ipc_client){
+	ipc_client.on("online",function(data,callback){
+		if (clusters[ipc_client.id] == undefined){
+			clusters[ipc_client.id] = {};
+			callback({status:"ok"});
 		}
 		else
-			callback({ok:false});
+			callback({status:"notok"});
 	});
-	socket.on("message",function(msg,callback){
+	ipc_client.on("message",function(msg,callback){
+		var socket;
+		if (clusters[ipc_client.id][msg.socket_id] == undefined){
+			clusters[ipc_client.id][msg.socket_id] = {
+				cluster_id: ipc_client.id,
+				socket_id: msg.socket_id,
+				handshake:{
+					username: msg.data.username,
+					cookie: msg.data.cookie,
+					room: msg.data.room,
+					ip: msg.data.ip
+				}
+			};
+			socket = clusters[ipc_client.id][msg.socket_id];
+		}
+		else{
+			socket = clusters[ipc_client.id][msg.socket_id];
+		}
 		switch(msg.type)
 		{
 			case "join":
-				join(socket, msg.data.username, msg.data.cookie, msg.data.room);
+					join(socket,callback);
 				break;
 			case "rename":
 				rename(socket, msg.data.username);
@@ -67,11 +90,13 @@ io.on('connection', function(socket){
 		}
 
 	});
+	ipc_client.on("disconnect", function(){
+
+	});
 });
-function join(socket, username, cookie, roomname){
-	if (!socket.joined)
-	{
-		roomname = roomname.toLowerCase();
+function join(user){
+	if (!user.joined){
+		var roomname = user.handshake.room.toLowerCase();
 		if (rooms[roomname] == undefined) //room not in memory
 		{
 			request.post(phploc + 'data/roominfo.php', {form:{ room: roomname}}, function(e, r, msg)
@@ -82,86 +107,85 @@ function join(socket, username, cookie, roomname){
 					if (rooms[roomname] == undefined) //check to be sure the room is still undefined
 					{
 						rooms[roomname] = room.create(roomname);
-						socket.emit('sys-message', { message: "Room loaded into memory, refresh page."});
-						socket.attemptDisconnect();
+						io.to(user.cluster_id).emit("message",{type:"emit", socket_id: user.socket_id, event:"sys-message", data:{ message: "Room loaded into memory, refresh page."}});
+						io.to(user.cluster_id).emit("message",{type:"disconnect", socket_id: user.socket_id});
 					}
 					else
 					{
-						socket.emit('sys-message', { message: "Room is stil loading, refresh page."});
-						socket.attemptDisconnect();
+						io.to(user.cluster_id).emit("message",{type:"emit",socket_id: user.socket_id, event:"sys-message", data:{ message: "Room is stil loading, refresh page."}});
+						io.to(user.cluster_id).emit("message",{type:"disconnect", socket_id: user.socket_id});
 					}
 				}
 				else
 				{
-					socket.emit('sys-message', { message: "This roomname does not exist."});
-					socket.attemptDisconnect();
+					io.to(user.cluster_id).emit("message",{type:"emit", socket_id: user.socket_id, event:"sys-message", data:{ message: "This room does not exist."}});
+					io.to(user.cluster_id).emit("message",{type:"disconnect", socket_id: user.socket_id});
 				}
 			});
 		}
 		else //room in memory
 		{
-			var socketIp = "";
-			try {
-				//(socketIp = socket.manager.handshaken[socket.id].address.address);
-				(socketIp = socket.handshake.headers['cf-connecting-ip'] || socket.handshake.address.address);
-			} catch (e)
-			{console.log("Error with socket IP address"); return;}
-			request.post(phploc + 'data/parseuser.php', {form:{username: username, cookie: cookie, ip: socketIp,
-															   room: roomname}}, function(e, r, msg)
-			{
-				//data to send back from php file: username, permissions, class, style
-				if (socket.connected == false) //if the socket disconnected by the time this runs, stop
-					return;
-				try {var response = JSON.parse(msg); } catch(ex) {console.log("JSON from parseuser.php not valid?" + e +"response:"+ msg); return;}
-				if (response.error)
+			request.post(phploc + 'data/parseuser.php',
 				{
-					socket.emit('sys-message', {message: response.error});
-					socket.attemptDisconnect();
-				}
-				else
+					form:{
+						username: user.handshake.username,
+						cookie: user.handshake.cookie,
+						ip: user.handshake.ip,
+						room: roomname}
+				},
+				function(e, r, msg)
 				{
-					var user = response.user;
-					var hashedIp = crypto.createHash('md5').update("Random Salt Value: $33x!20" + socketIp).digest("hex").substring(0, 11);
-					socket.info = {username: user.username, permissions: user.permissions, room: roomname,
-								   loggedin: user.loggedin, ip: socketIp, hashedIp: hashedIp,
-								   skipped: false, voteinfo: {voted: false, option: null}};
-					if (rooms[socket.info.room] != undefined)
+					if (clusters[user.cluster_id][user.socket_id] == undefined) //if the socket disconnected by the time this runs, stop
+						return;
+					try {var response = JSON.parse(msg); } catch(ex) {console.log("JSON from parseuser.php not valid?" + e +"response:"+ msg); return;}
+					if (response.error)
 					{
-						rooms[socket.info.room].tryJoin(socket);
+						io.to(user.cluster_id).emit("message",{type:"emit",socket_id: user.socket_id, event:"sys-message", data:{ message: response.error}});
+						io.to(user.cluster_id).emit("message",{type:"disconnect", socket_id: user.socket_id});
 					}
-				}
-			});
+					else
+					{
+						var hashedIp = crypto.createHash('md5').update("Random Salt Value: $33x!20" + user.handshake.ip).digest("hex").substring(0, 11);
+						var hashedId = crypto.createHash('md5').update("RandomTest"+user.socket_id).digest("hex");
+						user.info = {username: response.user.username, permissions: response.user.permissions, room: roomname,
+									   loggedin: response.user.loggedin, ip: user.handshake.ip, hashedIp: hashedIp,hashedId: hashedId,
+									   skipped: false, voteinfo: {voted: false, option: null}};
+						if (rooms[user.info.room] != undefined)
+						{
+							rooms[user.info.room].tryJoin(user);
+						}
+					}
+				});
 		}
 	}
 }
-function rename(socket, newUsername){
-	if (socket.joined)
+function rename(user, newUsername){
+	if (user.joined)
 	{
-		if (socket.info.username == "unnamed")
+		if (user.info.username == "unnamed")
 		{
-			rooms[socket.info.room].rename(socket, newUsername);
+			rooms[user.info.room].rename(user, newUsername);
 		}
 	}
 }
-function disconnect(socket){
-	socket.connected = false;
-	if (socket.joined)
+function disconnect(user){
+	if (user.joined)
 	{
-		if (rooms[socket.info.room] != undefined)
+		if (rooms[user.info.room] != undefined)
 		{
-			rooms[socket.info.room].leave(socket);
+			rooms[user.info.room].leave(user);
 		}
 	}
-	//socket.disconnect(); //causes error..?
+	delete clusters[user.cluster_id][user.socket_id];
 }
-function message(socket, message){
-	if (socket.joined && socket.info.username.toLowerCase() != "unnamed")
+function message(user, message){
+	if (user.joined && user.info.username.toLowerCase() != "unnamed")
 	{
-		rooms[socket.info.room].chatmessage(socket, parser.replaceTags(message));
+		rooms[user.info.room].chatmessage(user, parser.replaceTags(message));
 	}
 }
-function command(socket, data){
-	if (data.command != undefined && commands.commands[data.command] !=  undefined && socket.joined)
+function command(user, data){
+	if (data.command != undefined && commands.commands[data.command] !=  undefined && user.joined)
 	{
 		if (data.data !== undefined) //TODO: Check if data is not null for certain commands
 		{
@@ -170,7 +194,7 @@ function command(socket, data){
 				data.data = {}; //help prevent crash when null is sent but needed.
 				//commands.js will see this as an object and thus .property will trigger the undefined checks
 			}
-			commands.commands[data.command](data.data, socket);
+			commands.commands[data.command](data.data, user);
 		}
 	}
 }

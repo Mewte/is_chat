@@ -18,6 +18,10 @@
   "homepage": "https://github.com/Mewte/is_chat",
   "dependencies": {
     "knex": "^0.7.3",
-    "socket.io": "^1.3.4"
+    "mysql": "^2.5.4",
+    "n-vimeo": "^0.3.0",
+    "request": "^2.53.0",
+    "socket.io": "^1.3.4",
+    "youtube-feeds": "^2.3.0"
   }
 }
