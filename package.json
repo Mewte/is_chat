@@ -22,6 +22,7 @@
     "n-vimeo": "^0.3.0",
     "request": "^2.53.0",
     "socket.io": "^1.3.4",
+    "socket.io-client": "^1.3.5",
     "youtube-feeds": "^2.3.0"
   }
 }

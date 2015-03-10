@@ -1,0 +1,1 @@
+JS files in here are designed to be run, either independently or possibly as a child process inside another process

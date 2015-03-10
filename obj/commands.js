@@ -11,23 +11,20 @@ var video = require('n-vimeo').video;
 
 module.exports.commands = 
 	{
-		"broadcast":function(data, socket)
-		{
+		"broadcast":function(data, socket){
 			if (socket.info.username.toLowerCase() === "mewte" && socket.info.loggedin)
 			{
 				if (data.message !== undefined)
 				{
-					chat_room.sockets.emit('sys-message', {message: data.message});
+					//chat_room.sockets.emit('sys-message', {message: data.message});
 				}
 			}
 
 		},
-		"reload":function(data, socket)
-		{
+		"reload":function(data, socket){
 			socket.emit('play', {info: rooms[socket.info.room].nowPlaying.info, time: rooms[socket.info.room].time(), playing: rooms[socket.info.room].playing});
 		},
-		"add":function(data, socket)
-		{
+		"add":function(data, socket){
 			if (data.URL === undefined || data.URL === null)
 			{
 				return;
@@ -74,7 +71,7 @@ module.exports.commands =
 											mediaType: vidinfo.mediaType,
 											id: vidinfo.id,
 											channel: vidinfo.channel,
-											thumbnail: "http://img.youtube.com/vi/" + vidinfo.id + "/0.jpg"
+											thumbnail: "https://img.youtube.com/vi/" + vidinfo.id + "/0.jpg"
 										},
 										addedby: socket.info.username,
 										duration: data.duration,
@@ -221,8 +218,7 @@ module.exports.commands =
 				socket.emit('sys-message', {message: "You must be logged in to add videos."});
 			}
 		},
-		"ban":function(data, socket)
-		{
+		"ban":function(data, socket){
 			if (data.userid === undefined){ return;}
 			var indexOfUser = rooms[socket.info.room].indexOfUserByHashedID(data.userid);
 			if (indexOfUser > -1)
@@ -254,13 +250,11 @@ module.exports.commands =
 					banSocket.emit("request-disconnect");
 					banSocket.attemptDisconnect();
 					rooms[socket.info.room].kickAllByIP(banSocket.info.ip);
-					chat_room.sockets.in(socket.info.room).emit('log', {message: socket.info.username + " has banned a user."});
-
+					io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " has banned a user."}});
 				}
 			}
 		},
-		"leaverban":function(data, socket)
-		{
+		"leaverban":function(data, socket){
 			if (data.username === undefined){ return;}
 			if (socket.info.permissions > 0)
 			{
@@ -292,8 +286,7 @@ module.exports.commands =
 				}
 			}
 		},
-		"unban":function(data, socket)
-		{ //COMMAND, USERNAME, REASON
+		"unban":function(data, socket){
 			if (data.username === undefined){ return;} //argument 1 missing
 			if (socket.info.permissions > 0)
 			{
@@ -313,22 +306,20 @@ module.exports.commands =
 							}
 						}
 					});
-				chat_room.sockets.in(socket.info.room).emit('log', {message: socket.info.username + " has unbanned a user."});
+				io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " has banned a user."}});
 			}
 
 		},
-		"clearbans":function(data, socket)
-		{
+		"clearbans":function(data, socket){
 			if (socket.info.permissions > 0)
 			{
 				request.post(phploc + 'actions/bans.php', {form:{ username: "", ip: "", room: socket.info.room, action: "purge"}}, function(error,response,msg){
 					socket.emit('sys-message', {message: "Bans cleared."});
 				});
-				chat_room.sockets.in(socket.info.room).emit('log', {message: socket.info.username + " has cleared the ban list"});
+				io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " has cleared the ban list"}});
 			}
 		},
-		"kick":function(data, socket)
-		{
+		"kick":function(data, socket){
 			if (data.userid === undefined){ return;}
 			var indexOfUser = rooms[socket.info.room].indexOfUserByHashedID(data.userid)
 			if (indexOfUser > -1)
@@ -345,70 +336,63 @@ module.exports.commands =
 					kickSocket.attemptDisconnect();
 					socket.emit("sys-message", {message: "User kicked."});
 					rooms[socket.info.room].kickAllByIP(kickSocket.info.ip);
-					chat_room.sockets.in(socket.info.room).emit('log', {message: socket.info.username + " has kicked a user."});
+					io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " has kicked a user."}});
 				}
 			}
 
 		},
-		"skip":function(data, socket)
-		{
+		"skip":function(data, socket){
 			if (socket.info.loggedin && socket.info.skipped === false)
 			{
 				socket.info.skipped = true;
 				rooms[socket.info.room].addSkip();
 			}
 		},
-		"next":function(data, socket)
-		{
+		"next":function(data, socket){
 			if (socket.info.permissions > 0)
 			{
 				rooms[socket.info.room].nextVid();
-				chat_room.sockets.in(socket.info.room).emit('log', {message: socket.info.username + " used next."});
+				io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " used next."}});
 			}
 		},
-		"remove":function(data, socket)
-		{
+		"remove":function(data, socket){
 			if (socket.info.permissions > 0)
 			{
 				if (data.info != undefined)
 				{
 					rooms[socket.info.room].removeVideo(data.info, true);
-					chat_room.sockets.in(socket.info.room).emit('log', {message: socket.info.username + " removed a video."});
+					io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " removed a video."}});
 				}
 			}
 		},
-		"purge":function(data, socket)
-		{
+		"purge":function(data, socket){
 			if (socket.info.permissions > 0)
 			{
 				if (data.username != undefined)
 				{
 					rooms[socket.info.room].purge(data.username);
-					chat_room.sockets.in(socket.info.room).emit('log', {message: socket.info.username + " has purged " + data.username + "'s videos."});
+					io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " has purged " + data.username + "'s videos."}});
 				}
 			}
 		},
-		"toggleplaylistlock":function(data, socket)
-		{
+		"toggleplaylistlock":function(data, socket){
 			if (socket.info.permissions > 0)
 			{
 				rooms[socket.info.room].togglePlaylistLock();
-				chat_room.sockets.in(socket.info.room).emit('log', {message: socket.info.username + " toggled playlist lock."});
+				io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " toggled playlist lock."}});
 			}
 		},
-		"setskip":function(data, socket)
-		{
+		"setskip":function(data, socket){
 			if (socket.info.permissions > 0)
 			{
 				if ((data.skip != undefined) && (!isNaN(data.skip)) && (parseInt(data.skip,10) > 0) && (parseInt(data.skip[1]),10) < 100)
 				{//defined, a number, 1-100
 					rooms[socket.info.room].setSkip(parseInt(data.skip, 10) / 100);
-					chat_room.sockets.in(socket.info.room).emit('log', {message: socket.info.username + " modified skip ratio."});
+					io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " modified skip ratio."}});
 				}
 			}
 		},
-		"resynch":function(data, socket)
-		{
+		"resynch":function(data, socket){
 			if (rooms[socket.info.room].playing)
 				socket.emit('seekTo', {time: rooms[socket.info.room].time()})
 			else
@@ -416,18 +400,16 @@ module.exports.commands =
 
 			}
 		},
-		"motd":function(data, socket)
-		{
+		"motd":function(data, socket){
 
 			if (data.MOTD != undefined && socket.info.permissions > 0 )
 			{
-				chat_room.sockets.in(socket.info.room).emit('log', {message: socket.info.username + " changed the MOTD."});
+				io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " changed the MOTD."}});
 				rooms[socket.info.room].setMOTD("MOTD:" + parser.replaceTags(data.MOTD).substring(0,240));
 			}
 		},
 		//TEMPORARY COMMANDS (HOPEFULLY) ------------------------------------
-		"mod":function(data, socket)
-		{
+		"mod":function(data, socket){
 			if (data.username != undefined && socket.info.username.toLowerCase() === socket.info.room.toLowerCase() && socket.info.loggedin) //room owner
 			{
 				if (data.username.toLowerCase() != socket.info.username.toLowerCase()) //be sure user doesnt try to mod/unmod themself
@@ -452,8 +434,7 @@ module.exports.commands =
 
 			}
 		},
-		"demod":function(data, socket)
-		{
+		"demod":function(data, socket){
 			if (data.username != undefined && socket.info.username.toLowerCase() === socket.info.room.toLowerCase() && socket.info.loggedin) //room owner
 			{
 				var username = data.username.split(" "); //be sure name doesnt have spaces
@@ -478,8 +459,7 @@ module.exports.commands =
 
 			}
 		},
-		"banlist":function(data, socket)
-		{
+		"banlist":function(data, socket){
 			if (socket.info.permissions > 0)
 			{
 				request.post(phploc + 'data/banlist.php', {form:{room: socket.info.room}}, function(error,response,msg){
@@ -499,8 +479,7 @@ module.exports.commands =
 				});
 			}
 		},
-		"modlist":function(data, socket)
-		{
+		"modlist":function(data, socket){
 			if (socket.info.permissions > 0)
 			{
 				request.post(phploc + 'data/modlist.php', {form:{room: socket.info.room}}, function(error,response,msg){
@@ -520,33 +499,21 @@ module.exports.commands =
 				});
 			}
 		},
-		"move":function(data, socket)
-		{
+		"move":function(data, socket){
 			if ((data.info != undefined && data.position != undefined) && (!isNaN(data.position)) && (socket.info.permissions > 0))
 			{
 				rooms[socket.info.room].moveVideo(data.info, parseInt(data.position));
-				chat_room.sockets.in(socket.info.room).emit('log', {message: socket.info.username + " moved a video."});
+				io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " moved a video."}});
 			}
 		},
-		"clean":function(data, socket)
-		{
+		"clean":function(data, socket){
 			if (socket.info.permissions > 0)
 			{
 				rooms[socket.info.room].clean();
-				chat_room.sockets.in(socket.info.room).emit('log', {message: socket.info.username + " cleaned the playlist."});
+				io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " cleaned the playlist."}});
 			}
 		},
-		"save":function(data, socket)
-		{
-			if (socket.info.permissions > 0 )
-			{
-				//rooms[socket.info.room].savePlaylist();
-				socket.emit('sys-message', {message: "That command has been removed. Playlist now automatically save at set intervals."});
-				//chat_room.sockets.in(socket.info.room).emit('log', {message: socket.info.username + " has saved the playlist."});
-			}
-		},
-		"poll-create":function(data, socket)
-		{
+		"poll-create":function(data, socket){
 			if (socket.info.permissions > 0 )
 			{
 				if (data.title != undefined && data.title.trim() != "" && data.options != undefined && data.options instanceof Array && data.options.length > 0 && data.options.length <= 10)
@@ -560,12 +527,11 @@ module.exports.commands =
 					}
 					var poll = {title: title, options: options};
 					rooms[socket.info.room].createPoll(poll);
-					chat_room.sockets.in(socket.info.room).emit('log', {message: socket.info.username + " created a poll."});
+					io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " created a poll."}});
 				}
 			}
 		},
-		"poll-vote":function(data, socket)
-		{
+		"poll-vote":function(data, socket){
 			if (socket.info.loggedin === true && socket.info.voteinfo.voted === false && data.vote != undefined)
 			{
 				socket.info.voteinfo.voted = true;
@@ -573,73 +539,65 @@ module.exports.commands =
 				rooms[socket.info.room].addPollVote(data.vote)
 			}
 		},
-		"poll-end":function(data, socket)
-		{
+		"poll-end":function(data, socket){
 			if (socket.info.permissions > 0 )
 			{
 				rooms[socket.info.room].endPoll();
-				chat_room.sockets.in(socket.info.room).emit('log', {message: socket.info.username + " ended a poll."});
+				io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " ended a poll."}});
 			}
 		},
-		"lead": function(data, socket)
-		{
+		"lead": function(data, socket){
 			if (socket.info.permissions > 0)
 			{
 				rooms[socket.info.room].makeLead(socket.info.hashedId);
 			}
 		},
-		"unlead": function(data, socket)
-		{
+		"unlead": function(data, socket){
 			if (socket.info.permissions > 0 && rooms[socket.info.room].isLeader(socket.info.hashedId)) //is user leader of room
 			{
 				rooms[socket.info.room].makeLead(null);
 			}
 		},
-		"seekto":function(data, socket)
-		{
+		"seekto":function(data, socket){
 			if (socket.info.permissions > 0 && rooms[socket.info.room].isLeader(socket.info.hashedId))
 			{
 				if ((data.time !== undefined) && (!isNaN(data.time)))
 				{
 					rooms[socket.info.room].seekTo(parseInt(data.time));
-					chat_room.sockets.in(socket.info.room).emit('log', {message: socket.info.username + " seekedto."});
+					io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " seekedto."}});
 				}
 			}
 		},
-		"seekfrom":function(data, socket)
-		{
+		"seekfrom":function(data, socket){
 			if (socket.info.permissions > 0 && rooms[socket.info.room].isLeader(socket.info.hashedId))
 			{
 				if ((data.time !== undefined) && (!isNaN(data.time)))
 				{
 					rooms[socket.info.room].seekFrom(parseInt(data.time,10));
-					chat_room.sockets.in(socket.info.room).emit('log', {message: socket.info.username + " seekedfrom."});
+					io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " seekedfrom."}});
 				}
 			}
 		},
-		"play":function(data, socket)
-		{
+		"play":function(data, socket){
 			if (data.info === undefined){ return;}
 			if (socket.info.permissions > 0 && rooms[socket.info.room].isLeader(socket.info.hashedId))
 			{
 				rooms[socket.info.room].play(data.info);
-				chat_room.sockets.in(socket.info.room).emit('log', {message: socket.info.username + " played a video."});
+				io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " played a video."}});
 			}
 		},
-		"pause":function(data, socket)
-		{
+		"pause":function(data, socket){
 			if (socket.info.permissions > 0 && rooms[socket.info.room].isLeader(socket.info.hashedId))
 			{
 				rooms[socket.info.room].pause();
-				chat_room.sockets.in(socket.info.room).emit('log', {message: socket.info.username + " paused the video."});
+				io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " paused the video."}});
 			}
 		},
-		"resume":function(data, socket)
-		{
+		"resume":function(data, socket){
 			if (socket.info.permissions > 0 && rooms[socket.info.room].isLeader(socket.info.hashedId))
 			{
 				rooms[socket.info.room].resume();
-				chat_room.sockets.in(socket.info.room).emit('log', {message: socket.info.username + " resumed the video."});
+				io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " resumed the video."}});
 			}
 		}
 		//---

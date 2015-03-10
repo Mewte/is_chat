@@ -2,30 +2,18 @@
  * Chat Server Core Code
  * Clients -> Socket.IO Clusters -> Server Core(THIS APPLICATION)
  */
-var config = require("./config");
+var config = require("../config");
 var request = require("request");
-var commands = require("./obj/commands");
-var room = require("./obj/room");
-var parser = require("./obj/parsers");
+var commands = require("../obj/commands");
+var room = require("../obj/room");
+var parser = require("../obj/parsers");
 var crypto = require('crypto');
 var fs = require('fs');
-//var knex = require('knex')({
-//	client: 'mysql',
-//	connection: {
-//		host     : config.db_host,
-//		user     : config.db_user,
-//		password : config.db_pass,
-//		database : config.db_name
-//	},
-//	pool:{
-//		min: 2,
-//		max: 10
-//	}
-//});
-global.phploc = "http://127.0.0.1:8888/";
+
+global.phploc = config.chat.phploc;
 process.on('uncaughtException', function (error) {
-	//console.log("UNHANDLED ERROR! Logged to file.");
-	throw (error);
+	console.log("UNHANDLED ERROR! Logged to file.");
+	throw (error)
 	//fs.appendFile("crashlog.txt", error.stack + "---END OF ERROR----", function () {});
 });
 //object table, clusters is an object of clusters which are objects of sockets.
@@ -34,16 +22,19 @@ var webServer = require('http').createServer(function (req, res) {
 	res.end("No resource found.");
 });
 global.io = require('socket.io')(webServer);
-webServer.listen(config.listen_port);
+webServer.listen(config.chat.listen_on);
 
-
+io.set('heartbeat interval',5000);
+io.set('heartbeat timeout',10000);
 io.use(function(socket,next){
 	var token = socket.handshake.query.auth;
 	next();
 });
-var rooms = {};
+io.set('transports', ['websocket']);
+global.rooms = {};
 global.clusters = {};
 io.on('connection', function(ipc_client){
+	console.log(ipc_client.conn.transport.name);
 	ipc_client.on("online",function(data,callback){
 		if (clusters[ipc_client.id] == undefined){
 			clusters[ipc_client.id] = {};
@@ -63,6 +54,9 @@ io.on('connection', function(ipc_client){
 					cookie: msg.data.cookie,
 					room: msg.data.room,
 					ip: msg.data.ip
+				},
+				emit: function(event,data){
+					io.to(socket.cluster_id).emit("message",{type:"emit",socket_id: socket.socket_id, event:event, data:data});
 				}
 			};
 			socket = clusters[ipc_client.id][msg.socket_id];
@@ -91,7 +85,12 @@ io.on('connection', function(ipc_client){
 
 	});
 	ipc_client.on("disconnect", function(){
-
+		ipc_client.disconnect();
+		console.log("Cluster: "+ipc_client.id+" disconnected!")
+	});
+	ipc_client.on("error", function(e){
+		console.log(e);
+		ipc_client.disconnect();
 	});
 });
 function join(user){
