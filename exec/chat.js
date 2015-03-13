@@ -6,6 +6,7 @@ var config = require("../config");
 var request = require("request");
 var commands = require("../obj/commands");
 var room = require("../obj/room");
+var Socket = require("../modules/socket");
 var parser = require("../obj/parsers");
 var crypto = require('crypto');
 var fs = require('fs');
@@ -22,17 +23,17 @@ var webServer = require('http').createServer(function (req, res) {
 	res.end("No resource found.");
 });
 global.io = require('socket.io')(webServer);
+global.rooms = {};
+global.clusters = {};
+
 webServer.listen(config.chat.listen_on);
 
-io.set('heartbeat interval',5000);
-io.set('heartbeat timeout',10000);
 io.use(function(socket,next){
 	var token = socket.handshake.query.auth;
 	next();
 });
 io.set('transports', ['websocket']);
-global.rooms = {};
-global.clusters = {};
+
 io.on('connection', function(ipc_client){
 	console.log(ipc_client.conn.transport.name);
 	ipc_client.on("online",function(data,callback){
@@ -46,22 +47,25 @@ io.on('connection', function(ipc_client){
 	ipc_client.on("message",function(msg,callback){
 		var socket;
 		if (clusters[ipc_client.id][msg.socket_id] == undefined){
-			clusters[ipc_client.id][msg.socket_id] = {
-				cluster_id: ipc_client.id,
-				socket_id: msg.socket_id,
-				handshake:{
-					username: msg.data.username,
-					cookie: msg.data.cookie,
-					room: msg.data.room,
-					ip: msg.data.ip
-				},
-				emit: function(event,data){
-					io.to(socket.cluster_id).emit("message",{type:"emit",socket_id: socket.socket_id, event:event, data:data});
-				}
-			};
-			socket = clusters[ipc_client.id][msg.socket_id];
+			if (msg.handshake != undefined){
+				socket = new Socket(ipc_client.id,msg.socket_id,
+					{
+						username: msg.handshake.username,
+						cookie: msg.handshake.cookie,
+						room: msg.handshake.room,
+						ip: msg.handshake.ip
+					}
+				);
+				clusters[ipc_client.id][msg.socket_id] = socket;
+			}
+			else{
+				return;//dont continue, handshake data not provided and socket is undefined
+			}
 		}
 		else{
+			if (clusters[ipc_client.id][msg.socket_id] == -1){
+				return;
+			}
 			socket = clusters[ipc_client.id][msg.socket_id];
 		}
 		switch(msg.type)
@@ -85,11 +89,12 @@ io.on('connection', function(ipc_client){
 
 	});
 	ipc_client.on("disconnect", function(){
-		ipc_client.disconnect();
 		console.log("Cluster: "+ipc_client.id+" disconnected!")
 	});
+	//if (config.environment != "dev")
 	ipc_client.on("error", function(e){
-		console.log(e);
+		console.log(jsonFriendlyError(e));
+		ipc_client.emit("error_occured",{});//emit that an error occured, giving the socket a chance to cleanly end itself (and reconnect)
 		ipc_client.disconnect();
 	});
 });
@@ -175,7 +180,15 @@ function disconnect(user){
 			rooms[user.info.room].leave(user);
 		}
 	}
-	delete clusters[user.cluster_id][user.socket_id];
+	/*
+	set it to -1 so we know it's being cleaned up.
+	I fear that if we don't, there's a chance that sockets.js might send a message shortly after 
+	even though it's considered 'disconnected', due to the async nature of node.js messages.
+	*/
+	clusters[user.cluster_id][user.socket_id] = -1;
+	setTimeout(function(){
+		delete clusters[user.cluster_id][user.socket_id];
+	},10000);
 }
 function message(user, message){
 	if (user.joined && user.info.username.toLowerCase() != "unnamed")
@@ -196,4 +209,11 @@ function command(user, data){
 			commands.commands[data.command](data.data, user);
 		}
 	}
+}
+function jsonFriendlyError(err, filter, space) {
+	var plainObject = {};
+	Object.getOwnPropertyNames(err).forEach(function (key) {
+		plainObject[key] = err[key];
+	});
+	return plainObject;
 }

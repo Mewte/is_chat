@@ -221,16 +221,13 @@ module.exports.commands =
 		"ban":function(data, socket){
 			if (data.userid === undefined){ return;}
 			var indexOfUser = rooms[socket.info.room].indexOfUserByHashedID(data.userid);
-			if (indexOfUser > -1)
-			{
-				data.userid = rooms[socket.info.room].users[indexOfUser].id;//replace userid(which is the hashed id) with the real id
-				var banSocket = chat_room.sockets.sockets[data.userid];
-				if (banSocket === undefined)
+			if (indexOfUser > -1){
+				var banUser = rooms[socket.info.room].users[indexOfUser]; //user and socket object are structured differently
+				if (banUser === undefined)
 					return; //Can cause issue where socket is undefined (For now on, anytime accessing sockets.sockets[socket.id] check for undefined)
+				var banSocket = clusters[banUser.cluster_id][banUser.id];
 				if (parseInt(socket.info.permissions,10) > parseInt(banSocket.info.permissions,10))
 				{
-
-					banSocket.emit('sys-message', {message: "You've been banned."});
 					request.post(phploc + 'actions/bans.php', {form:{ip: banSocket.info.ip, username: banSocket.info.username,
 																	room: banSocket.info.room, loggedin: banSocket.info.loggedin, action: "add" }},
 						function(error, response, msg){
@@ -247,8 +244,8 @@ module.exports.commands =
 								}
 							}
 						});
-					banSocket.emit("request-disconnect");
-					banSocket.attemptDisconnect();
+					banSocket.emit('sys-message', {message: "You've been banned."});
+					banSocket.disconnect();
 					rooms[socket.info.room].kickAllByIP(banSocket.info.ip);
 					io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " has banned a user."}});
 				}

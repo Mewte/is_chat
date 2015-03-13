@@ -44,15 +44,15 @@ ipc.on('message', function(msg,callback){
 			break;
 		case "disconnect": //disconnect socket
 			if (io.sockets.connected[msg.socket_id]){
+				console.log(msg);
 				var socket = io.sockets.connected[msg.socket_id];
-				if (socket.joined){
-					socket.emit('request-disconnect');
-					socket.leave(socket.info.room);
-					setTimeout(function() //give socket a small delay to disconnect itself before we force boot it
-					{
-						socket.disconnect();
-					}, 500);
-				}
+				if (msg.room)
+					socket.leave(msg.room); //which room to leave is sent with the disconnect event so that we can ensure the user will no longer receive room emits during this disconnect period
+				socket.emit('request-disconnect');
+				setTimeout(function() //give socket a small delay to disconnect itself before we force boot it
+				{
+					socket.disconnect();
+				}, 500);
 			}
 			break;
 		case "join":
@@ -86,13 +86,6 @@ function cluster(ipc){
 	webServer.listen(8080);
 	io = require('socket.io')(webServer);
 	io.on('connection', function(socket) {
-		socket.attemptDisconnect = function(){
-			if (socket.joined)
-			{
-				socket.leave(socket.info.room); //unsubscribe user from room immediately
-			}
-			ipc.emit("message",{type: "disconnect", socket_id: socket.id});
-		};
 		var ip = socket.client.request.headers['cf-connecting-ip'] || socket.client.conn.remoteAddress;
 		var joinEmitted = false;
 		socket.on('join', function(data)
@@ -102,7 +95,7 @@ function cluster(ipc){
 				if (data.username != undefined && data.cookie != undefined && data.room != undefined && data.room == socket.handshake.query.room)
 				{
 					ipc.emit("message",{type: "join",socket_id: socket.id,
-						data: {
+						handshake: {
 							username: data.username,
 							cookie: data.cookie,
 							room: data.room,

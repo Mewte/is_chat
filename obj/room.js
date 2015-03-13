@@ -1,5 +1,6 @@
 var request  =  require('request');
 var fs = require('fs');
+var Socket = require("../modules/socket");
 function room(roomName)
 {
 	this.roomName = roomName;
@@ -57,25 +58,24 @@ room.prototype.tryJoin = function(socket)
 	{
 		if (!socket.info.permissions > 0)
 		{
-			io.to(socket.cluster_id).emit("message",{type:"emit",socket_id: socket.socket_id, event:"sys-message", data:{ message: "Room is locked. Your permissions were too low to enter."}});
-			io.to(socket.cluster_id).emit("message",{type:"disconnect", socket_id: socket.socket_id});
+			socket.emit("sys-message", { message: "Room is locked. Your permissions were too low to enter."});
+			socket.disconnect();
 			return;
 		}
 	}
 	if (this.playlistLoading)
 	{
 		console.log("Playlist is still loading..");
-		io.to(socket.cluster_id).emit("message",{type:"emit",socket_id: socket.socket_id, event:"sys-message", data:{ message: "Playlist is still loading. Please refresh."}});
-		io.to(socket.cluster_id).emit("message",{type:"disconnect", socket_id: socket.socket_id});
+		socket.emit("sys-message", { message: "Playlist is still loading. Please refresh."});
+		socket.disconnect();
 		return;
 	}
 	if (socket.info.username.toLowerCase() == "unnamed")
 	{
 		if (socket.info.username == "unnamed")
 			this.join(socket);
-		else //some how, the user may have hijacked the join and put unnamed in a variation of caps /todo: remove this maybe? I dont think its needed anymore * 3/8/2014
-		{
-			socket.attemptDisconnect();
+		else{
+			socket.disconnect();//user passed unnamed in case varation
 		}
 	}
 	else
@@ -88,14 +88,13 @@ room.prototype.tryJoin = function(socket)
 				if (connectedSocket != undefined){
 					if (socket.info.loggedin) //socket is a registered user, thus he has higher precendence over the already connected socket
 					{
-						io.to(socket.cluster_id).emit("message",{type:"emit",socket_id: socket.socket_id, event:"sys-message", data:{ message: "A registered user has entered with your name."}});
-						io.to(socket.cluster_id).emit("message",{type:"disconnect", socket_id: socket.socket_id});
-						//this.leave(connectedSocket); //remove user now
+						socket.emit("sys-message", { message: "A registered user has entered with your name."});
+						socket.disconnect();
 					}
 					else //name is already in use
 					{
-						io.to(socket.cluster_id).emit("message",{type:"emit",socket_id: socket.socket_id, event:"sys-message", data:{ message: "Name is in use. Disconnected."}});
-						io.to(socket.cluster_id).emit("message",{type:"disconnect", socket_id: socket.socket_id});
+						socket.emit("sys-message", { message: "Name is in use. Disconnected."});
+						socket.disconnect();
 						return;
 					}
 				}
@@ -112,7 +111,7 @@ room.prototype.leave = function(socket)
 	var indexOfUser = this.indexOfUserByID(socket.socket_id);
 	if (indexOfUser > -1)
 	{
-		io.emit("message",{type:"room_emit", room: this.roomName, event:"remove-user", data:{userId: this.safeUsers[indexOfUser].id}});
+		Socket.toRoom(this.roomName,"remove-user", {userId: this.safeUsers[indexOfUser].id});
 		this.users.splice(indexOfUser, 1);
 		this.safeUsers.splice(indexOfUser, 1);
 	}
@@ -140,7 +139,7 @@ room.prototype.leave = function(socket)
 	if (this.isLeader(socket.socket_id))
 	{
 		this.leader = null;
-		io.emit("message",{type:"room_emit", room: this.roomName, event:"leader", data:{userId: null}});
+		Socket.toRoom(this.roomName, "leader", {userId: null});
 		if (!this.playing) //if leader paused video before leaving/disconnecting, resume video
 		{
 			this.resume();
@@ -161,29 +160,29 @@ room.prototype.join = function(socket)
 	this.users.push(user);
 	this.safeUsers.push(safeUser);
 	
-	io.to(socket.cluster_id).emit("message",{type:"emit", socket_id: socket.socket_id, event:"userinfo", data:{id: socket.info.hashedId, username: socket.info.username, permissions: socket.info.permissions, room: socket.info.room, loggedin: socket.info.loggedin, ip: socket.info.hashedIp}});
-	io.to(socket.cluster_id).emit("message",{type:"emit", socket_id: socket.socket_id, event:"playlist", data:{playlist: this.playlist}});
-	io.to(socket.cluster_id).emit("message",{type:"emit", socket_id: socket.socket_id, event:"userlist", data:{userlist: this.safeUsers}});
-	io.to(socket.cluster_id).emit("message",{type:"emit", socket_id: socket.socket_id, event:"room-event", data:{action: "playlistlock", data: this.playListLock}});
-	io.to(socket.cluster_id).emit("message",{type:"emit", socket_id: socket.socket_id, event:"sys-message", data:{message: this.MOTD}});
+	socket.emit("userinfo", {id: socket.info.hashedId, username: socket.info.username, permissions: socket.info.permissions, room: socket.info.room, loggedin: socket.info.loggedin, ip: socket.info.hashedIp});
+	socket.emit("playlist", {playlist: this.playlist});
+	socket.emit("userlist", {userlist: this.safeUsers});
+	socket.emit("room-event", {action: "playlistlock", data: this.playListLock});
+	socket.emit("sys-message", {message: this.MOTD});
 	/*
 	 * Make sure this is emitted before the user is apart of the room, otherwise they may get this and add themselves to the userlist twice I guess?
 	 * (if this has issues.. then try out the room_broadcast method, though I can't think of another use for it 3/2/2015
 	 */
-	io.emit("message",{type:"room_emit", room: this.roomName, event:"add-user", data:{user: safeUser}});
+	Socket.toRoom(this.roomName, "add-user", {user: safeUser});
 	//--
 	if (this.nowPlaying.info === null)
 	{
-		io.to(socket.cluster_id).emit("message",{type:"emit", socket_id: socket.socket_id, event:"sys-message", data:{message: "playlist is empty."}});
+		socket.emit("sys-message", {message: "playlist is empty."});
 	}
 	if (this.poll !== null)
 	{
-		io.to(socket.cluster_id).emit("message",{type:"emit", socket_id: socket.socket_id, event:"room-event", data:{action: "poll-create", poll: this.poll.data}});
+		socket.emit("room-event", {action: "poll-create", poll: this.poll.data});
 	}
 	socket.joined = true;
 	if (this.leader != null)
 	{
-		io.to(socket.cluster_id).emit("message",{type:"emit", socket_id: socket.socket_id, event:"room-event", data:{action: "leader", userId: this.leader}});
+		socket.emit("room-event", {action: "leader", userId: this.leader});
 	}
 	if (socket.info.loggedin)
 	{
@@ -210,8 +209,8 @@ room.prototype.join = function(socket)
 			}, this.saveInterval);//this.saveInterval);
 		}
 	}
-	io.emit("message",{type:"join", socket_id: socket.socket_id, room: this.roomName,});
-	io.to(socket.cluster_id).emit("message",{type:"emit", socket_id: socket.socket_id, event:"play", data:{info: this.nowPlaying.info, time: this.time(), playing: this.playing}});
+	socket.join(this.roomName)
+	socket.emit("play", {info: this.nowPlaying.info, time: this.time(), playing: this.playing});
 	this.updateRoomInfo();
 };
 room.prototype.kickAllByIP = function(ip) //called after kicking a specific user or banning a user by server.js (TODO: mitigate ban and kick functions to room.js
@@ -223,8 +222,8 @@ room.prototype.kickAllByIP = function(ip) //called after kicking a specific user
 		{
 			if (socket.info != undefined && socket.info.ip === ip && !(socket.info.permissions > 0))
 			{
-				io.to(socket.cluster_id).emit("message",{type:"emit",socket_id: socket.socket_id, event:"sys-message", data:{ message: "A user with your ip address has been kicked/banned."}});
-				io.to(socket.cluster_id).emit("message",{type:"disconnect", socket_id: socket.socket_id});
+				socket.emit("sys-message", { message: "A user with your ip address has been kicked/banned."});
+				socket.disconnect();
 			}
 		}
 	}
@@ -243,7 +242,7 @@ room.prototype.chatmessage = function(socket, message){
 	{
 
 	}
-	io.emit("message",{type:"room_emit", room: this.roomName, event:"chat", data:{
+	Socket.toRoom(this.roomName, "chat", {
 		user:{
 			id: socket.info.hashedId,
 			username: socket.info.username,
@@ -253,7 +252,7 @@ room.prototype.chatmessage = function(socket, message){
 			ip: socket.info.hashedIp
 		},
 		message: message
-	}});
+	});
 };
 room.prototype.indexOfUser = function(username)
 {
@@ -299,7 +298,7 @@ room.prototype.rename = function(socket, newname)
 		this.users[indexOfUser].username = newname;
 		this.safeUsers[indexOfUser].username = newname;
 		socket.info.username = newname;
-		io.emit("message",{type:"room_emit", room: this.roomName, event:"rename", data:{username: newname, id: socket.info.hashedId}});
+		Socket.toRoom(this.roomName, "rename", {username: newname, id: socket.info.hashedId});
 	}
 };
 room.prototype.indexOfVid = function(vidinfo)
@@ -316,7 +315,7 @@ room.prototype.indexOfVid = function(vidinfo)
 room.prototype.setMOTD = function(MOTD)
 {
 	this.MOTD = MOTD;
-	io.emit("message",{type:"room_emit", room: this.roomName, event:"sys-message", data:{message: this.MOTD}});
+	Socket.toRoom(this.roomName, "sys-message", {message: this.MOTD});
 };
 room.prototype.isLeader = function(hashedId)
 {
@@ -325,7 +324,7 @@ room.prototype.isLeader = function(hashedId)
 room.prototype.makeLead = function(hashedId)
 {
 	this.leader = hashedId;
-	io.emit("message",{type:"room_emit", room: this.roomName, event:"room-event", data:{action: "leader", userId: this.leader}});
+	Socket.toRoom(this.roomName,"room-event", {action: "leader", userId: this.leader});
 }
 //player
 room.prototype.start = function()
@@ -337,7 +336,7 @@ room.prototype.start = function()
 		{
 			this.playing = true;
 			this.nowPlaying = {info: this.playlist[0].info, timeStarted: new Date().getTime(), duration: this.playlist[0].duration, title: this.playlist[0].title};
-			io.emit("message",{type:"room_emit", room: this.roomName, event:"play", data:{info: this.nowPlaying.info, time: this.time(), playing: this.playing}});
+			Socket.toRoom(this.roomName, "play", {info: this.nowPlaying.info, time: this.time(), playing: this.playing});
 			this.setTimer();
 			this.updateRoomInfo();
 		}//else: nothing to play, playlist empty
@@ -347,7 +346,7 @@ room.prototype.start = function()
 		this.playing = true;
 		this.nowPlaying.timeStarted = new Date().getTime() - (this.nowPlaying.stoppedTime * 1000);
 		this.setTimer();
-		io.emit("message",{type:"room_emit", room: this.roomName, event:"resume", data:{time: this.time()}});
+		Socket.toRoom(this.roomName, "resume", {time: this.time()});
 	}
 };
 room.prototype.stop = function()
@@ -372,7 +371,7 @@ room.prototype.nextVid = function()
 		clearTimeout(this.playTimeout);
 		this.resume(); //resume will check if video is paused, if so, itll resume it
 		this.setTimer();
-		io.emit("message",{type:"room_emit", room: this.roomName, event:"play", data:{info: this.nowPlaying.info, time: this.time(), playing: this.playing}});
+		Socket.toRoom(this.roomName, "play", {info: this.nowPlaying.info, time: this.time(), playing: this.playing});
 		this.resetSkips();
 		this.updateRoomInfo();
 	}
@@ -388,7 +387,7 @@ room.prototype.addVideo = function(vidinfo)
 		if (this.playlist.length > this.maxVids)
 			return "playlist full.";
 		this.playlist.push(vidinfo);
-		io.emit("message",{type:"room_emit", room: this.roomName, event:"add-vid", data:{info: vidinfo}});
+		Socket.toRoom(this.roomName, "add-vid", {info: vidinfo});
 		if (this.playlist.length === 1) //first video added to playlist, autostart it
 		{
 			this.start();
@@ -420,7 +419,7 @@ room.prototype.removeVideo = function(vidinfo, single)
 		if (single){
 			var videos = new Array();
 			videos.push(vidinfo);
-			io.emit("message",{type:"room_emit", room: this.roomName, event:"remove-vid", data:{videos: videos}});
+			Socket.toRoom(this.roomName, "remove-vid",{videos: videos});
 		}
 	}
 };
@@ -433,7 +432,7 @@ room.prototype.moveVideo = function(vidinfo, position)
 		{
 			this.playlist.move(vidPosition, position);
 			this.playlistSaveNeeded = true;
-			io.emit("message",{type:"room_emit", room: this.roomName, event:"move-vid", data:{info: vidinfo, position: position}});
+			Socket.toRoom(this.roomName, "move-vid", {info: vidinfo, position: position});
 		}
 	}
 };
@@ -447,7 +446,7 @@ room.prototype.purge = function(username) //this purge is very inefficient as it
 			this.removeVideo(this.playlist[i].info, false); //remove vidoe does an additional loop lookup..
 		}
 	}
-	io.emit("message",{type:"room_emit", room: this.roomName, event:"remove-vid", data:{videos: videos}});
+	Socket.toRoom(this.roomName, "remove-vid", {videos: videos});
 };
 room.prototype.clean = function()
 {
@@ -461,7 +460,7 @@ room.prototype.clean = function()
 			this.removeVideo(this.playlist[i].info, false);
 		}
 	}
-	io.emit("message",{type:"room_emit", room: this.roomName, event:"remove-vid", data:{videos: videos}});
+	Socket.toRoom(this.roomName, "remove-vid", {videos: videos});
 };
 room.prototype.time  = function()
 {
@@ -483,8 +482,8 @@ room.prototype.setTimer = function()
 }
 room.prototype.togglePlaylistLock = function()
 {
-	this.playListLock = !(this.playListLock)
-	io.emit("message",{type:"room_emit", room: this.roomName, event:"playlistlock", data: this.playListLock});
+	this.playListLock = !(this.playListLock);
+	Socket.toRoom(this.roomName, "playlistlock", this.playListLock);
 };
 //--
 //skips
@@ -515,7 +514,7 @@ room.prototype.removeSkip = function()
 room.prototype.updateSkips = function()
 {
 	this.skipsNeeded = Math.ceil(this.numberOfRegisteredUsers * this.skipThreshold);
-	io.emit("message",{type:"room_emit", room: this.roomName, event:"skips", data:{skips: this.totalSkips, skipsneeded: this.skipsNeeded}});
+	Socket.toRoom(this.roomName, "skips", {skips: this.totalSkips, skipsneeded: this.skipsNeeded});
 	if ((this.skipsNeeded > 0) && this.totalSkips >= this.skipsNeeded) //dont evalulate if 0/0
 	{
 			this.nextVid();
@@ -541,7 +540,7 @@ room.prototype.seekTo = function(time)
 		{
 			this.nowPlaying.stoppedTime = time;
 		}
-		io.emit("message",{type:"room_emit", room: this.roomName, event:"seekTo", data: {time: time}});
+		Socket.toRoom(this.roomName, "seekTo", {time: time});
 	}
 };
 room.prototype.seekFrom = function(time)
@@ -559,7 +558,7 @@ room.prototype.play = function(info)
 		this.resetSkips();
 		this.resume(); //if vid was paused, this will resume it
 		this.setTimer();
-		io.emit("message",{type:"room_emit", room: this.roomName, event:"play", data: {info: this.nowPlaying.info, time: this.time(), playing: this.playing }});
+		Socket.toRoom(this.roomName, "play", {info: this.nowPlaying.info, time: this.time(), playing: this.playing});
 	 }
 };
 room.prototype.pause = function()
@@ -567,7 +566,7 @@ room.prototype.pause = function()
 	if (this.playing)
 	{
 		this.stop();
-		io.emit("message",{type:"room_emit", room: this.roomName, event:"pause", data: {}});
+		Socket.toRoom(this.roomName, "pause", {});
 	}
 };
 room.prototype.resume = function()
@@ -587,7 +586,7 @@ room.prototype.createPoll = function(info) //poll.data = {title = string, option
 		this.endPoll();
 	}
 	this.poll = new poll(info);
-	io.emit("message",{type:"room_emit", room: this.roomName, event:"room-event", data: {action: "poll-create", poll: this.poll.data}});
+	Socket.toRoom(this.roomName, "room-event", {action: "poll-create", poll: this.poll.data});
 };
 room.prototype.endPoll = function()
 {
@@ -603,7 +602,7 @@ room.prototype.endPoll = function()
 					user.info.voteinfo.voted = false;
 			}
 		}
-		io.emit("message",{type:"room_emit", room: this.roomName, event:"room-event", data: {action: "poll-end"}});
+		Socket.toRoom(this.roomName, "room-event", {action: "poll-end"});
 	}
 };
 room.prototype.addPollVote = function(vote)
@@ -611,7 +610,7 @@ room.prototype.addPollVote = function(vote)
 	if (this.poll != null)
 	{
 		this.poll.addVote(vote);
-		io.emit("message",{type:"room_emit", room: this.roomName, event:"room-event", data: {action: "poll-addVote", option: vote}});
+		Socket.toRoom(this.roomName,"room-event",{action: "poll-addVote", option: vote});
 	}
 };
 room.prototype.removePollVote = function(vote)
@@ -619,7 +618,7 @@ room.prototype.removePollVote = function(vote)
 	if (this.poll != null)
 	{
 		this.poll.removeVote(vote);
-		io.emit("message",{type:"room_emit", room: this.roomName, event:"room-event", data: {action: "poll-removeVote", option: vote}});
+		Socket.toRoom(this.roomName,"room-event", {action: "poll-removeVote", option: vote});
 	}
 };
 //playlist dump
