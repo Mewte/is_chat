@@ -2,9 +2,8 @@
 //Also, Alot of problems with comparisons.. using parseInt(num,10) for alot of stuff to be sure they're getting casted properly
 //I.E. 10 is not greater than 0, but 9 is?
 var parser = require("./parsers");
-var request  =  require('request');
 var youtube = require('youtube-feeds');
-
+var Socket = require("../modules/socket");
 var video = require('n-vimeo').video;
 
 //Array.prototype.isArray = true; //use to check if variable is an array - WHY DOES THIS ALWAYS BREAK EVERYTHING
@@ -226,28 +225,39 @@ module.exports.commands =
 				if (banUser === undefined)
 					return; //Can cause issue where socket is undefined (For now on, anytime accessing sockets.sockets[socket.id] check for undefined)
 				var banSocket = clusters[banUser.cluster_id][banUser.id];
+				if (banSocket === undefined)
+					return;
 				if (parseInt(socket.info.permissions,10) > parseInt(banSocket.info.permissions,10))
 				{
-					request.post(phploc + 'actions/bans.php', {form:{ip: banSocket.info.ip, username: banSocket.info.username,
-																	room: banSocket.info.room, loggedin: banSocket.info.loggedin, action: "add" }},
-						function(error, response, msg){
-							if (error != null){
-								socket.emit('sys-message', {message: "Failed to ban user."});
+					if (banSocket.info.loggedin){
+						db("bans").insert(db.raw(
+							"(user_id, username, room_name, ip, loggedin) " + db.select(db.raw("id as user_id, username, ? as room_name, ? as ip, 1 as loggedin",
+							[banSocket.info.room,banSocket.info.ip])).from("users").where("username", banSocket.info.username).toString()))
+						.then(function(){
+							socket.emit("sys-message",{message:"User banned."});
+						}).catch(function(e){
+							if (e.errno == 1062){ //duplicate
+								socket.emit("sys-message",{message:"That user is already banned."});
 							}
-							else{
-								msg = JSON.parse(msg);
-								if (msg.result == true){
-									socket.emit('sys-message', {message: "User banned."});
-								}
-								else{
-									socket.emit('sys-message', {message: msg.error});
-								}
+							else
+								socket.emit("sys-message",{message:"Failed to ban user."});
+						});	
+					}
+					else{
+						db("bans").insert({user_id:null, username:banSocket.info.username,room_name:banSocket.info.room,ip:socket.info.ip}).then(function(){
+							socket.emit("sys-message",{message:"User banned"});
+						}).catch(function(e){
+							if (e.errno == 1062){ //duplicate
+								socket.emit("sys-message",{message:"That user is already banned."});
 							}
+							else
+								socket.emit("sys-message",{message:"Failed to ban user."});
 						});
+					}
 					banSocket.emit('sys-message', {message: "You've been banned."});
 					banSocket.disconnect();
 					rooms[socket.info.room].kickAllByIP(banSocket.info.ip);
-					io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " has banned a user."}});
+					Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " has banned a user."});
 				}
 			}
 		},
@@ -275,7 +285,7 @@ module.exports.commands =
 							}
 						});
 						rooms[socket.info.room].kickAllByIP(user.ip);
-						chat_room.sockets.in(socket.info.room).emit('log', {message: socket.info.username + " leaverbanned a user."});
+						Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " leaverbanned a user."});
 				}
 				else
 				{
@@ -287,23 +297,17 @@ module.exports.commands =
 			if (data.username === undefined){ return;} //argument 1 missing
 			if (socket.info.permissions > 0)
 			{
-				request.post(phploc + 'actions/bans.php', {form:{ip:"", loggedin: "", username: data.username,
-																room: socket.info.room, reason: "", action: "remove" }},
-					function(error, response, msg){
-						if (error != null){
-							socket.emit('sys-message', {message: "Failed to unban user."});
-						}
-						else{
-							msg = JSON.parse(msg);
-							if (msg.result == true){
-								socket.emit('sys-message', {message: "User unbanned."});
-							}
-							else{
-								socket.emit('sys-message', {message: msg.error});
-							}
-						}
-					});
-				io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " has banned a user."}});
+				db("bans").where({room_name:socket.info.room}).where({username:data.username}).del().then(function (affected) {
+					if (affected){
+						socket.emit('sys-message', {message: "User unbanned."});
+					}
+					else{
+						socket.emit('sys-message', {message: "User not found."});
+					}
+				}).catch(function (e) {
+					socket.emit('sys-message', {message: "Failed to remove ban."});
+				});
+				Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " has unbanned a user."});
 			}
 
 		},
@@ -313,7 +317,7 @@ module.exports.commands =
 				request.post(phploc + 'actions/bans.php', {form:{ username: "", ip: "", room: socket.info.room, action: "purge"}}, function(error,response,msg){
 					socket.emit('sys-message', {message: "Bans cleared."});
 				});
-				io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " has cleared the ban list"}});
+				Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " has cleared the ban list"});
 			}
 		},
 		"kick":function(data, socket){
@@ -321,19 +325,20 @@ module.exports.commands =
 			var indexOfUser = rooms[socket.info.room].indexOfUserByHashedID(data.userid)
 			if (indexOfUser > -1)
 			{
-				data.userid = rooms[socket.info.room].users[indexOfUser].id;//replace userid(which is the hashed id) with the real id
-				var kickSocket = chat_room.sockets.sockets[data.userid];
-				if (kickSocket === undefined)
+				var kickUser = rooms[socket.info.room].users[indexOfUser]; //user and socket object are structured differently
+				if (kickUser === undefined)
 					return; //Can cause issue where socket is undefined (For now on, anytime accessing sockets.sockets[socket.id] check for undefined)
+				var kickSocket = clusters[kickUser.cluster_id][kickUser.id];
+				if (kickSocket === undefined)
+					kickSocket;
 				if (parseInt(socket.info.permissions,10) > parseInt(kickSocket.info.permissions,10))
 				{
 
 					kickSocket.emit('sys-message', {message: "You've been kicked."});
-					kickSocket.emit("request-disconnect");
-					kickSocket.attemptDisconnect();
+					kickSocket.disconnect();
 					socket.emit("sys-message", {message: "User kicked."});
 					rooms[socket.info.room].kickAllByIP(kickSocket.info.ip);
-					io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " has kicked a user."}});
+					Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " has kicked a user."});
 				}
 			}
 
@@ -349,7 +354,7 @@ module.exports.commands =
 			if (socket.info.permissions > 0)
 			{
 				rooms[socket.info.room].nextVid();
-				io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " used next."}});
+				Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " used next."});
 			}
 		},
 		"remove":function(data, socket){
@@ -358,7 +363,7 @@ module.exports.commands =
 				if (data.info != undefined)
 				{
 					rooms[socket.info.room].removeVideo(data.info, true);
-					io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " removed a video."}});
+					Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " removed a video."});
 				}
 			}
 		},
@@ -368,7 +373,7 @@ module.exports.commands =
 				if (data.username != undefined)
 				{
 					rooms[socket.info.room].purge(data.username);
-					io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " has purged " + data.username + "'s videos."}});
+					Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " has purged " + data.username + "'s videos."});
 				}
 			}
 		},
@@ -376,7 +381,7 @@ module.exports.commands =
 			if (socket.info.permissions > 0)
 			{
 				rooms[socket.info.room].togglePlaylistLock();
-				io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " toggled playlist lock."}});
+				Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " toggled playlist lock."});
 			}
 		},
 		"setskip":function(data, socket){
@@ -385,7 +390,7 @@ module.exports.commands =
 				if ((data.skip != undefined) && (!isNaN(data.skip)) && (parseInt(data.skip,10) > 0) && (parseInt(data.skip[1]),10) < 100)
 				{//defined, a number, 1-100
 					rooms[socket.info.room].setSkip(parseInt(data.skip, 10) / 100);
-					io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " modified skip ratio."}});
+					Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " modified the skip ratio."});
 				}
 			}
 		},
@@ -401,67 +406,21 @@ module.exports.commands =
 
 			if (data.MOTD != undefined && socket.info.permissions > 0 )
 			{
-				io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " changed the MOTD."}});
+				Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " changed the MOTD."});
 				rooms[socket.info.room].setMOTD("MOTD:" + parser.replaceTags(data.MOTD).substring(0,240));
 			}
 		},
 		//TEMPORARY COMMANDS (HOPEFULLY) ------------------------------------
 		"mod":function(data, socket){
-			if (data.username != undefined && socket.info.username.toLowerCase() === socket.info.room.toLowerCase() && socket.info.loggedin) //room owner
-			{
-				if (data.username.toLowerCase() != socket.info.username.toLowerCase()) //be sure user doesnt try to mod/unmod themself
-				request.post(phploc + 'actions/mods.php', {form:{room: socket.info.room, username: data.username, action: "add"}},
-				function(error,response,msg){
-					if (chat_room.sockets.sockets[socket.id] != undefined) //check for rare instance that socket disconnected
-					{
-						if (error != null){
-							socket.emit('sys-message', {message: "Failed to mod user."});
-						}
-						else{
-							msg = JSON.parse(msg);
-							if (msg.result == true){
-								socket.emit('sys-message', {message: "Mod added."});
-							}
-							else{
-								socket.emit('sys-message', {message: msg.error});
-							}
-						}
-					}
-				});
-
-			}
+			socket.emit('sys-message', {message: "The mod command has been removed. You can add/remove moderators by using the settings dropdown menu."});
 		},
 		"demod":function(data, socket){
-			if (data.username != undefined && socket.info.username.toLowerCase() === socket.info.room.toLowerCase() && socket.info.loggedin) //room owner
-			{
-				var username = data.username.split(" "); //be sure name doesnt have spaces
-				if (data.username.toLowerCase() != socket.info.username.toLowerCase()) //be sure user doesnt try to mod/unmod themself
-				request.post(phploc + 'actions/mods.php', {form:{room: socket.info.room, username: data.username, action: "remove"}}, function(error,response,msg){
-					if (chat_room.sockets.sockets[socket.id] != undefined) //check for rare instance that socket disconnected
-					{
-						if (error != null){
-							socket.emit('sys-message', {message: "Failed to remove mod."});
-						}
-						else{
-							msg = JSON.parse(msg);
-							if (msg.result == true){
-								socket.emit('sys-message', {message: "Mod removed.."});
-							}
-							else{
-								socket.emit('sys-message', {message: msg.error});
-							}
-						}
-					}
-				});
-
-			}
+			socket.emit('sys-message', {message: "The demod command has been removed. You can add/remove moderators by using the settings dropdown menu."});
 		},
 		"banlist":function(data, socket){
-			if (socket.info.permissions > 0)
-			{
+			if (socket.info.permissions > 0){
 				request.post(phploc + 'data/banlist.php', {form:{room: socket.info.room}}, function(error,response,msg){
-					if (chat_room.sockets.sockets[socket.id] != undefined) //check for rare instance that socket disconnected
-					{
+					if (clusters[socket.cluster_id][socket.socket_id] != undefined){ //check for rare instance that socket disconnected
 						var bans = JSON.parse(msg);
 						var banlist = "";
 						if (bans.length == 0)
@@ -477,11 +436,9 @@ module.exports.commands =
 			}
 		},
 		"modlist":function(data, socket){
-			if (socket.info.permissions > 0)
-			{
+			if (socket.info.permissions > 0){
 				request.post(phploc + 'data/modlist.php', {form:{room: socket.info.room}}, function(error,response,msg){
-					if (chat_room.sockets.sockets[socket.id] != undefined) //check for rare instance that socket disconnected
-					{
+					if (clusters[socket.cluster_id][socket.socket_id] != undefined){ //check for rare instance that socket disconnected
 						var mods = JSON.parse(msg);
 						var modlist = "";
 						if (mods.length == 0)
@@ -500,14 +457,14 @@ module.exports.commands =
 			if ((data.info != undefined && data.position != undefined) && (!isNaN(data.position)) && (socket.info.permissions > 0))
 			{
 				rooms[socket.info.room].moveVideo(data.info, parseInt(data.position));
-				io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " moved a video."}});
+				Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " moved a video."});
 			}
 		},
 		"clean":function(data, socket){
 			if (socket.info.permissions > 0)
 			{
 				rooms[socket.info.room].clean();
-				io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " cleaned the playlist."}});
+				Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " cleaned the playlist."});
 			}
 		},
 		"poll-create":function(data, socket){
@@ -524,7 +481,7 @@ module.exports.commands =
 					}
 					var poll = {title: title, options: options};
 					rooms[socket.info.room].createPoll(poll);
-					io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " created a poll."}});
+					Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " created a poll."});
 				}
 			}
 		},
@@ -540,7 +497,7 @@ module.exports.commands =
 			if (socket.info.permissions > 0 )
 			{
 				rooms[socket.info.room].endPoll();
-				io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " ended a poll."}});
+				Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " ended a poll."});
 			}
 		},
 		"lead": function(data, socket){
@@ -561,7 +518,7 @@ module.exports.commands =
 				if ((data.time !== undefined) && (!isNaN(data.time)))
 				{
 					rooms[socket.info.room].seekTo(parseInt(data.time));
-					io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " seekedto."}});
+					Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " seekedto."});
 				}
 			}
 		},
@@ -571,7 +528,7 @@ module.exports.commands =
 				if ((data.time !== undefined) && (!isNaN(data.time)))
 				{
 					rooms[socket.info.room].seekFrom(parseInt(data.time,10));
-					io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " seekedfrom."}});
+					Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " seekedfrom."});
 				}
 			}
 		},
@@ -580,21 +537,21 @@ module.exports.commands =
 			if (socket.info.permissions > 0 && rooms[socket.info.room].isLeader(socket.info.hashedId))
 			{
 				rooms[socket.info.room].play(data.info);
-				io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " played a video."}});
+				Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " played a video."});
 			}
 		},
 		"pause":function(data, socket){
 			if (socket.info.permissions > 0 && rooms[socket.info.room].isLeader(socket.info.hashedId))
 			{
 				rooms[socket.info.room].pause();
-				io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " paused the video."}});
+				Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " paused the video."});
 			}
 		},
 		"resume":function(data, socket){
 			if (socket.info.permissions > 0 && rooms[socket.info.room].isLeader(socket.info.hashedId))
 			{
 				rooms[socket.info.room].resume();
-				io.emit("message",{type:"room_emit", room: socket.info.room, event:"log", data:{message: socket.info.username + " resumed the video."}});
+				Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " resumed the video."});
 			}
 		}
 		//---

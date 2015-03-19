@@ -44,7 +44,6 @@ ipc.on('message', function(msg,callback){
 			break;
 		case "disconnect": //disconnect socket
 			if (io.sockets.connected[msg.socket_id]){
-				console.log(msg);
 				var socket = io.sockets.connected[msg.socket_id];
 				if (msg.room)
 					socket.leave(msg.room); //which room to leave is sent with the disconnect event so that we can ensure the user will no longer receive room emits during this disconnect period

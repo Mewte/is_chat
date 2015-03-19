@@ -7,6 +7,7 @@ function socket(cluster_id,socket_id,handshake){
 	this.handshake = handshake;
 	this.info = {};
 	this.joined = false;
+	this.disconnecting = false;
 }
 socket.prototype.emit = function(event,data){
 	io.to(this.cluster_id).emit("message",{type:"emit",socket_id: this.socket_id, event:event, data:data});
@@ -15,7 +16,9 @@ socket.prototype.broadcast = function(event,data){
 
 };
 socket.prototype.disconnect = function(){
-	io.to(this.cluster_id).emit("message",{type:"disconnect", socket_id: socket.socket_id,room:this.info.room});
+	if (!this.disconnecting)
+		io.to(this.cluster_id).emit("message",{type:"disconnect", socket_id: this.socket_id,room:this.info.room});
+	this.disconnecting = true;
 };
 socket.prototype.join = function(room){
 	io.to(this.cluster_id).emit("message",{type:"join", socket_id: this.socket_id, room: room});

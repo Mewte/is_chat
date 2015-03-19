@@ -1,12 +1,20 @@
 module.exports = {
 	environment: "dev",
-	listen_port: 8080,
-	"ipc":{
-		"host":"",
-		port:""
+	chat:{
+		phploc:"http://127.0.0.1:8888/",
+		listen_on: 8088
 	},
-	db_host:"isdb",
-	db_user:"root",
-	db_pass:"",
-	db_name:"instasynch"
+	sockets:{
+		ipc:{
+			host:"localhost",
+			port:8088
+		},
+		listen_on:8080
+	},
+	db:{
+		host:"localhost",
+		user:"root",
+		pass:"",
+		name:"instasynch"
+	}
 };

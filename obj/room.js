@@ -1,4 +1,3 @@
-var request  =  require('request');
 var fs = require('fs');
 var Socket = require("../modules/socket");
 function room(roomName)
@@ -88,8 +87,8 @@ room.prototype.tryJoin = function(socket)
 				if (connectedSocket != undefined){
 					if (socket.info.loggedin) //socket is a registered user, thus he has higher precendence over the already connected socket
 					{
-						socket.emit("sys-message", { message: "A registered user has entered with your name."});
-						socket.disconnect();
+						connectedSocket.emit("sys-message", { message: "A registered user has entered with your name."});
+						connectedSocket.disconnect();
 					}
 					else //name is already in use
 					{
@@ -232,8 +231,11 @@ room.prototype.updateRoomInfo = function(){
 	var thumbnail = "https://i1.ytimg.com/vi/2312/default.jpg"; //default blank youtube thumbnail
 	if (this.nowPlaying.info !== null)
 		thumbnail = this.nowPlaying.info.thumbnail;
-	request.post(phploc + "actions/updateroominfo.php",
-		{form:{users: this.users.length, thumbnail: thumbnail, title: this.nowPlaying.title, roomname: this.roomName}}, function(error, response, msg){});
+	db('rooms').update({users:this.users.length,thumbnail:thumbnail,title: this.nowPlaying.title}).where({room_name: this.roomName}).then(function(){
+
+	}).catch(function(err){
+		console.log(err);
+	});
 };
 room.prototype.chatmessage = function(socket, message){
 	message = message.toString().substring(0, 240);

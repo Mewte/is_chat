@@ -10,6 +10,19 @@ var Socket = require("../modules/socket");
 var parser = require("../obj/parsers");
 var crypto = require('crypto');
 var fs = require('fs');
+global.db = require('knex')({
+	client: 'mysql',
+	connection: {
+		host     : config.db.host,
+		user     : config.db.user,
+		password : config.db.pass,
+		database : config.db.name
+	},
+	pool:{
+		min: 2,
+		max: 10
+	}
+});
 
 global.phploc = config.chat.phploc;
 process.on('uncaughtException', function (error) {
@@ -98,9 +111,9 @@ io.on('connection', function(ipc_client){
 		ipc_client.disconnect();
 	});
 });
-function join(user){
-	if (!user.joined){
-		var roomname = user.handshake.room.toLowerCase();
+function join(socket){
+	if (!socket.joined){
+		var roomname = socket.handshake.room.toLowerCase();
 		if (rooms[roomname] == undefined) //room not in memory
 		{
 			request.post(phploc + 'data/roominfo.php', {form:{ room: roomname}}, function(e, r, msg)
@@ -111,19 +124,19 @@ function join(user){
 					if (rooms[roomname] == undefined) //check to be sure the room is still undefined
 					{
 						rooms[roomname] = room.create(roomname);
-						io.to(user.cluster_id).emit("message",{type:"emit", socket_id: user.socket_id, event:"sys-message", data:{ message: "Room loaded into memory, refresh page."}});
-						io.to(user.cluster_id).emit("message",{type:"disconnect", socket_id: user.socket_id});
+						socket.emit("sys-message",{ message: "Room loaded into memory, refresh page."});
+						socket.disconnect();
 					}
 					else
 					{
-						io.to(user.cluster_id).emit("message",{type:"emit",socket_id: user.socket_id, event:"sys-message", data:{ message: "Room is stil loading, refresh page."}});
-						io.to(user.cluster_id).emit("message",{type:"disconnect", socket_id: user.socket_id});
+						socket.emit("sys-message", { message: "Room is stil loading, refresh page."});
+						socket.disconnect();
 					}
 				}
 				else
 				{
-					io.to(user.cluster_id).emit("message",{type:"emit", socket_id: user.socket_id, event:"sys-message", data:{ message: "This room does not exist."}});
-					io.to(user.cluster_id).emit("message",{type:"disconnect", socket_id: user.socket_id});
+					socket.emit("sys-message", { message: "This room does not exist."});
+					socket.disconnect();
 				}
 			});
 		}
@@ -132,52 +145,52 @@ function join(user){
 			request.post(phploc + 'data/parseuser.php',
 				{
 					form:{
-						username: user.handshake.username,
-						cookie: user.handshake.cookie,
-						ip: user.handshake.ip,
+						username: socket.handshake.username,
+						cookie: socket.handshake.cookie,
+						ip: socket.handshake.ip,
 						room: roomname}
 				},
 				function(e, r, msg)
 				{
-					if (clusters[user.cluster_id][user.socket_id] == undefined) //if the socket disconnected by the time this runs, stop
+					if (clusters[socket.cluster_id][socket.socket_id] == undefined) //if the socket disconnected by the time this runs, stop
 						return;
 					try {var response = JSON.parse(msg); } catch(ex) {console.log("JSON from parseuser.php not valid?" + e +"response:"+ msg); return;}
 					if (response.error)
 					{
-						io.to(user.cluster_id).emit("message",{type:"emit",socket_id: user.socket_id, event:"sys-message", data:{ message: response.error}});
-						io.to(user.cluster_id).emit("message",{type:"disconnect", socket_id: user.socket_id});
+						socket.emit("sys-message", { message: response.error});
+						socket.disconnect();
 					}
 					else
 					{
-						var hashedIp = crypto.createHash('md5').update("Random Salt Value: $33x!20" + user.handshake.ip).digest("hex").substring(0, 11);
-						var hashedId = crypto.createHash('md5').update("RandomTest"+user.socket_id).digest("hex");
-						user.info = {username: response.user.username, permissions: response.user.permissions, room: roomname,
-									   loggedin: response.user.loggedin, ip: user.handshake.ip, hashedIp: hashedIp,hashedId: hashedId,
+						var hashedIp = crypto.createHash('md5').update("Random Salt Value: $33x!20" + socket.handshake.ip).digest("hex").substring(0, 11);
+						var hashedId = crypto.createHash('md5').update("RandomTest"+socket.socket_id).digest("hex");
+						socket.info = {username: response.user.username, permissions: response.user.permissions, room: roomname,
+									   loggedin: response.user.loggedin, ip: socket.handshake.ip, hashedIp: hashedIp,hashedId: hashedId,
 									   skipped: false, voteinfo: {voted: false, option: null}};
-						if (rooms[user.info.room] != undefined)
+						if (rooms[socket.info.room] != undefined)
 						{
-							rooms[user.info.room].tryJoin(user);
+							rooms[socket.info.room].tryJoin(socket);
 						}
 					}
 				});
 		}
 	}
 }
-function rename(user, newUsername){
-	if (user.joined)
+function rename(socket, newUsername){
+	if (socket.joined)
 	{
-		if (user.info.username == "unnamed")
+		if (socket.info.username == "unnamed")
 		{
-			rooms[user.info.room].rename(user, newUsername);
+			rooms[socket.info.room].rename(socket, newUsername);
 		}
 	}
 }
-function disconnect(user){
-	if (user.joined)
+function disconnect(socket){
+	if (socket.joined)
 	{
-		if (rooms[user.info.room] != undefined)
+		if (rooms[socket.info.room] != undefined)
 		{
-			rooms[user.info.room].leave(user);
+			rooms[socket.info.room].leave(socket);
 		}
 	}
 	/*
@@ -185,19 +198,19 @@ function disconnect(user){
 	I fear that if we don't, there's a chance that sockets.js might send a message shortly after 
 	even though it's considered 'disconnected', due to the async nature of node.js messages.
 	*/
-	clusters[user.cluster_id][user.socket_id] = -1;
+	clusters[socket.cluster_id][socket.socket_id] = -1;
 	setTimeout(function(){
-		delete clusters[user.cluster_id][user.socket_id];
+		delete clusters[socket.cluster_id][socket.socket_id];
 	},10000);
 }
-function message(user, message){
-	if (user.joined && user.info.username.toLowerCase() != "unnamed")
+function message(socket, message){
+	if (socket.joined && socket.info.username.toLowerCase() != "unnamed")
 	{
-		rooms[user.info.room].chatmessage(user, parser.replaceTags(message));
+		rooms[socket.info.room].chatmessage(socket, parser.replaceTags(message));
 	}
 }
-function command(user, data){
-	if (data.command != undefined && commands.commands[data.command] !=  undefined && user.joined)
+function command(socket, data){
+	if (data.command != undefined && commands.commands[data.command] !=  undefined && socket.joined)
 	{
 		if (data.data !== undefined) //TODO: Check if data is not null for certain commands
 		{
@@ -206,7 +219,7 @@ function command(user, data){
 				data.data = {}; //help prevent crash when null is sent but needed.
 				//commands.js will see this as an object and thus .property will trigger the undefined checks
 			}
-			commands.commands[data.command](data.data, user);
+			commands.commands[data.command](data.data, socket);
 		}
 	}
 }
