@@ -244,7 +244,7 @@ module.exports.commands =
 						});	
 					}
 					else{
-						db("bans").insert({user_id:null, username:banSocket.info.username,room_name:banSocket.info.room,ip:socket.info.ip}).then(function(){
+						db("bans").insert({user_id:null, username:banSocket.info.username,room_name:banSocket.info.room,ip:banSocket.info.ip, loggedin:0}).then(function(){
 							socket.emit("sys-message",{message:"User banned"});
 						}).catch(function(e){
 							if (e.errno == 1062){ //duplicate
@@ -268,22 +268,31 @@ module.exports.commands =
 				var user = rooms[socket.info.room].lastUserByUsername(data.username);
 				if (user != -1)
 				{
-						request.post(phploc + 'actions/bans.php', {form:{ip: user.ip, username: user.username, loggedin: user.loggedin,
-																		room: socket.info.room, reason: "", action: "add" }},
-						function(error, response, msg){
-							if (error != null){
-								socket.emit('sys-message', {message: "Failed to leaver ban user."});
-							}
-							else{
-								msg = JSON.parse(msg);
-								if (msg.result == true){
-									socket.emit('sys-message', {message: "User leaver banned."});
+						if (user.loggedin){
+							db("bans").insert(db.raw(
+								"(user_id, username, room_name, ip, loggedin) " + db.select(db.raw("id as user_id, username, ? as room_name, ? as ip, 1 as loggedin",
+								[socket.info.room,user.ip])).from("users").where("username", user.username).toString()))
+							.then(function(){
+								socket.emit("sys-message",{message:"User leaver banned."});
+							}).catch(function(e){
+								if (e.errno == 1062){ //duplicate
+									socket.emit("sys-message",{message:"That user is already banned."});
 								}
-								else{
-									socket.emit('sys-message', {message: msg.error});
+								else
+									socket.emit("sys-message",{message:"Failed to leaver ban user."});
+							});
+						}
+						else{
+							db("bans").insert({user_id:null, username:user.username,room_name:socket.info.room,ip:user.ip, loggedin:0}).then(function(){
+								socket.emit("sys-message",{message:"User leaver banned banned"});
+							}).catch(function(e){
+								if (e.errno == 1062){ //duplicate
+									socket.emit("sys-message",{message:"That user is already banned."});
 								}
-							}
-						});
+								else
+									socket.emit("sys-message",{message:"Failed to leaver ban user."});
+							});
+						}
 						rooms[socket.info.room].kickAllByIP(user.ip);
 						Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " leaverbanned a user."});
 				}
@@ -309,13 +318,14 @@ module.exports.commands =
 				});
 				Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " has unbanned a user."});
 			}
-
 		},
 		"clearbans":function(data, socket){
 			if (socket.info.permissions > 0)
 			{
-				request.post(phploc + 'actions/bans.php', {form:{ username: "", ip: "", room: socket.info.room, action: "purge"}}, function(error,response,msg){
+				db("bans").where({room_name:socket.info.room}).del().then(function (affected) {
 					socket.emit('sys-message', {message: "Bans cleared."});
+				}).catch(function (e) {
+					socket.emit('sys-message', {message: "Failed to clear bans."});
 				});
 				Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " has cleared the ban list"});
 			}
@@ -399,7 +409,7 @@ module.exports.commands =
 				socket.emit('seekTo', {time: rooms[socket.info.room].time()})
 			else
 			{
-
+//
 			}
 		},
 		"motd":function(data, socket){
@@ -419,37 +429,38 @@ module.exports.commands =
 		},
 		"banlist":function(data, socket){
 			if (socket.info.permissions > 0){
-				request.post(phploc + 'data/banlist.php', {form:{room: socket.info.room}}, function(error,response,msg){
-					if (clusters[socket.cluster_id][socket.socket_id] != undefined){ //check for rare instance that socket disconnected
-						var bans = JSON.parse(msg);
-						var banlist = "";
-						if (bans.length == 0)
-							banlist = "Ban list is empty.";
-						else
-							for (var i = 0; i < bans.length; i++){
-								var ban = bans[i].username + (bans[i].loggedin == 1 ? " " : "(greyname) ");
-								banlist += ban;
-							}
-						socket.emit('sys-message', {message: banlist});
+				db.select(["username","loggedin"]).from('bans').where({room_name:socket.info.room}).then(function(bans){
+					//possibly check if socket still exists?
+					//					if (clusters[socket.cluster_id][socket.socket_id] != undefined){ //check for rare instance that socket disconnected
+					var banlist = "";
+					if (bans.length == 0){
+						banlist = "Ban list is empty.";
 					}
+					else{
+						for (var i = 0; i < bans.length; i++){
+							var ban = bans[i].username + (bans[i].loggedin == 1 ? " " : "(greyname) ");
+							banlist += ban;
+						}
+					}
+					socket.emit('sys-message', {message: banlist});
+				}).catch(function(err){
+					socket.emit('sys-message', {message: "Error getting ban list."});
 				});
 			}
 		},
 		"modlist":function(data, socket){
 			if (socket.info.permissions > 0){
-				request.post(phploc + 'data/modlist.php', {form:{room: socket.info.room}}, function(error,response,msg){
-					if (clusters[socket.cluster_id][socket.socket_id] != undefined){ //check for rare instance that socket disconnected
-						var mods = JSON.parse(msg);
-						var modlist = "";
-						if (mods.length == 0)
-							modlist = "Mod list is empty.";
-						else
-							for (var i = 0; i < mods.length; i++){
-								var mod = mods[i] + " ";
-								modlist += mod;
-							}
-						socket.emit('sys-message', {message: modlist});
+				db.select(["username"]).from('mods').where({room_name:socket.info.room}).then(function(mods){
+					//possibly check if socket still exists?
+					//					if (clusters[socket.cluster_id][socket.socket_id] != undefined){ //check for rare instance that socket disconnected
+					var modlist = socket.info.room+" ";
+					for (var i = 0; i < mods.length; i++) {
+						var mod = mods[i].username + " ";
+						modlist += mod;
 					}
+					socket.emit('sys-message', {message: modlist});
+				}).catch(function(err){
+					socket.emit('sys-message', {message: "Error getting mod list."});
 				});
 			}
 		},

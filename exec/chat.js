@@ -10,6 +10,8 @@ var Socket = require("../modules/socket");
 var parser = require("../obj/parsers");
 var crypto = require('crypto');
 var fs = require('fs');
+var EventEmitter = require("events").EventEmitter;
+var events = new EventEmitter();
 global.db = require('knex')({
 	client: 'mysql',
 	connection: {
@@ -102,9 +104,20 @@ io.on('connection', function(ipc_client){
 
 	});
 	ipc_client.on("disconnect", function(){
-		console.log("Cluster: "+ipc_client.id+" disconnected!")
+		console.log("Cluster: "+ipc_client.id+" disconnected!");
+		//clean up all sockets
+		for (var key in clusters[ipc_client.id]){
+			var socket = clusters[ipc_client.id][key];
+			if (socket.joined)
+			{
+				if (rooms[socket.info.room] != undefined)
+				{
+					rooms[socket.info.room].leave(socket);
+				}
+			}
+		}
+		delete clusters[ipc_client.id];
 	});
-	//if (config.environment != "dev")
 	ipc_client.on("error", function(e){
 		console.log(jsonFriendlyError(e));
 		ipc_client.emit("error_occured",{});//emit that an error occured, giving the socket a chance to cleanly end itself (and reconnect)
@@ -138,6 +151,26 @@ function join(socket){
 					socket.emit("sys-message", { message: "This room does not exist."});
 					socket.disconnect();
 				}
+			});
+			db.select().from("rooms").where({room_name:roomname}).then(function(room){
+				if (room.length == 0){
+					socket.emit("sys-message", { message: "This room does not exist."});
+					socket.disconnect();
+				}
+				else{
+					if (rooms[roomname] == undefined){ //make sure room hasn't loaded
+						rooms[roomname] = room.create(roomname, function(err){
+							if (err){
+
+							}
+							else{ //room is ready, all users waiting for it can now join
+								
+							}
+						});	
+					}
+				}
+			}).catch(function(e){
+
 			});
 		}
 		else //room in memory
@@ -200,7 +233,8 @@ function disconnect(socket){
 	*/
 	clusters[socket.cluster_id][socket.socket_id] = -1;
 	setTimeout(function(){
-		delete clusters[socket.cluster_id][socket.socket_id];
+		if (clusters[socket.cluster_id])
+			delete clusters[socket.cluster_id][socket.socket_id];
 	},10000);
 }
 function message(socket, message){

@@ -634,7 +634,7 @@ room.prototype.savePlaylist = function()
 		});
 	}
 };
-room.prototype.loadPlaylist = function()
+room.prototype.loadPlaylist = function(callback)
 {
 	var thisRoom = this; //because you can't use this in a callback function
 	var filename = "playlistdump/" + this.roomName.toLowerCase() + ".playlist";
@@ -646,7 +646,11 @@ room.prototype.loadPlaylist = function()
 				if (err) throw err;
 				thisRoom.playlistLoading = false; //allow users to join now
 				var playlist = null;
-				try {playlist = JSON.parse(data)} catch(e) {console.log("JSON from playlist invalid?"); return;}
+				try {
+					playlist = JSON.parse(data)
+				} catch(e) {
+					console.log("JSON from playlist invalid?"); return;
+				}
 				thisRoom.playlist = playlist;
 				thisRoom.playlist.move = function (old_index, new_index) //Code is property of Reid from stackoverflow
 				{
@@ -693,9 +697,9 @@ poll.prototype.removeVote = function(vote)
 	}
 };
 
-module.exports.create = function(roomName)
+module.exports.create = function(roomName,callback)
 {
 	var thisroom = new room(roomName);
-	thisroom.loadPlaylist();
+	thisroom.loadPlaylist(callback);
 	return thisroom;
 }

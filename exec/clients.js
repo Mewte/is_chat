@@ -10,19 +10,24 @@ var client = require("socket.io-client");
 //	throw (error);
 //	//fs.appendFile("crashlog.txt", error.stack + "---END OF ERROR----", function () {});
 //});
-var server = null;
-var io = null;
+
+var EventEmitter = require("events").EventEmitter;
+var events = new EventEmitter();
+events.setMaxListeners(0); //infinite listeners, we will be creating a listener for every socket in 'queue'
+
 ipc = client.connect('http://'+config.sockets.ipc.host+':'+config.sockets.ipc.port,{
 	query: "auth=abc123",
 	timeout: 5000,
 	transports: ['websocket']
 });
+var status = 0; //if status is true, sockets can connect, if 0 then no they cannot connect
 ipc.on('connect',function() {
 	console.log("Connected to IPC!");
 	ipc.emit("online",{},function(response){
 		if (response.status == "ok"){
 			console.log("Spawning Server..")
-			server = new cluster(ipc);
+			status = 1;
+			events.emit("ipc_connected");
 		}
 	});
 });
@@ -66,10 +71,10 @@ ipc.on('message', function(msg,callback){
 });
 ipc.on('disconnect',function(){
 	console.log("Disconnected from IPC!");
-	if (server){
-		console.log("Killing Server..");
-		server.kill();
-	}
+	for (var socketID in io.sockets.connected){
+		io.sockets.connected[socketID].emit('request-disconnect');
+	};
+	status = 0;
 });
 ipc.on('connect_error', function(){
 	console.log("connect_error");
@@ -77,109 +82,112 @@ ipc.on('connect_error', function(){
 ipc.on('connect_timeout',function(){
 	console.log('connect_timeout');
 });
-function cluster(ipc){
-	var webServer = require('http').createServer(function (req, res) {
-		res.writeHead(404);
-		res.end("No resource found.");
-	});
-	webServer.listen(8080);
-	io = require('socket.io')(webServer);
-	io.on('connection', function(socket) {
-		var ip = socket.client.request.headers['cf-connecting-ip'] || socket.client.conn.remoteAddress;
-		var joinEmitted = false;
-		socket.on('join', function(data)
-		{
-			if (joinEmitted == false)
-			{// this is a one time emit per socket connection
-				if (data.username != undefined && data.cookie != undefined && data.room != undefined && data.room == socket.handshake.query.room)
-				{
-					ipc.emit("message",{type: "join",socket_id: socket.id,
-						handshake: {
-							username: data.username,
-							cookie: data.cookie,
-							room: data.room,
-							ip: ip
+var webServer = require('http').createServer(function (req, res) {
+	res.writeHead(404);
+	res.end("No resource found.");
+});
+webServer.listen(8080);
+io = require('socket.io')(webServer);
+io.on('connection', function(socket) {
+	var ip = socket.client.request.headers['cf-connecting-ip'] || socket.client.conn.remoteAddress;
+	var joinEmitted = false;
+	socket.on('join', function(data)
+	{
+		if (joinEmitted == false){// this is a one time emit per socket connection
+			if (data.username != undefined && data.cookie != undefined && data.room != undefined && data.room == socket.handshake.query.room)
+			{
+				socket.info = {
+					username: data.username,
+					cookie: data.cookie,
+					room: data.room,
+					ip: ip
+				}
+				if (status){
+					ipc.emit("message",{type: "join",socket_id: socket.id,handshake: socket.info});
+				}
+				else{ //put user in queue and trigger event when IPC comes back online
+					socket.emit("sys-message",{message:"Could not connect to central chat server. Please try again."});
+					events.once("ipc_connected",function(){
+						if (socket.connected){ //be sure socket is still connected
+							ipc.emit("message",{type: "join",socket_id: socket.id,handshake: socket.info});
 						}
 					});
 				}
 			}
-			joinEmitted = true;
-		});
-		var renameEmitted = false;
-		socket.on('rename', function(data)
-		{
-			if (data.username != undefined && data.username.toLowerCase() != "unnamed" && renameEmitted == false)
-			{
-				if (data.username.toLowerCase() == "mewte")
-				{
-					socket.emit("sys-message", {message: "b-but you are not Mewte..."});
-				}
-				else
-				{
-					ipc.emit("message",{type: "rename", socket_id: socket.id, data: {username: data.username}});
-					renameEmitted = true;
-				}
-			}
-		});
-		socket.on('disconnect', function(data)
-		{
-			ipc.emit("message",{type: "disconnect", socket_id: socket.id});
-		});
-		var currentCharacters = 0;
-		var currentMessages = 0;
-		var reduceMsgInterval = null; //reduce messages by 1 and characters by 100 every second
-		socket.on('message', function(data)
-		{
-			if ((data.message != undefined) && (data.message.trim() != "")){
-				//increment message limits
-				currentCharacters += data.message.length;
-				currentMessages += 1;
-
-				if (currentCharacters > 260 || currentMessages > 3)
-				{
-					socket.emit("sys-message", {message: "Please don't spam/flood the chat."});
-					currentCharacters = Math.min(600, currentCharacters);
-					currentMessages = Math.min(6, currentMessages);
-				}
-				else
-				{
-					ipc.emit("message",{type: "chat", socket_id: socket.id, data: {message: data.message}});
-				}
-				if (reduceMsgInterval === null)
-				{
-					reduceMsgInterval = setInterval(
-					function(){
-						currentCharacters -= 60;
-						currentMessages -= 1;
-						currentCharacters = Math.max(0, currentCharacters);
-						currentMessages = Math.max(0, currentMessages);
-						if (currentCharacters == 0 && currentMessages == 0)
-						{
-							clearInterval(reduceMsgInterval);
-							reduceMsgInterval = null;
-						}
-					},1000);
-				}
-			}
-
-		});
-		var queue = commandQueue.create(6);
-		socket.on('command', function(data)
-		{
-			queue.addCommand();
-			if (queue.checkFlood()) //too many commands
-			{
-				socket.emit('sys-message', { message: "Too many commands. Disconnected."});
-				socket.emit("request-disconnect");
-				socket.disconnect();
-				return;
-			}
-			if (joinEmitted){
-				ipc.emit("message",{type: "command", socket_id: socket.id, data: {data: data}});
-			}
-		});
+		}
+		joinEmitted = true;
 	});
-	this.kill = function(){
-		webServer.close();
-	};
-}
+	var renameEmitted = false;
+	socket.on('rename', function(data)
+	{
+		if (data.username != undefined && data.username.toLowerCase() != "unnamed" && renameEmitted == false)
+		{
+			if (data.username.toLowerCase() == "mewte")
+			{
+				socket.emit("sys-message", {message: "b-but you are not Mewte..."});
+			}
+			else
+			{
+				ipc.emit("message",{type: "rename", socket_id: socket.id, data: {username: data.username}});
+				renameEmitted = true;
+			}
+		}
+	});
+	socket.on('disconnect', function(data)
+	{
+		ipc.emit("message",{type: "disconnect", socket_id: socket.id});
+	});
+	var currentCharacters = 0;
+	var currentMessages = 0;
+	var reduceMsgInterval = null; //reduce messages by 1 and characters by 100 every second
+	socket.on('message', function(data)
+	{
+		if ((data.message != undefined) && (data.message.trim() != "")){
+			//increment message limits
+			currentCharacters += data.message.length;
+			currentMessages += 1;
+
+			if (currentCharacters > 260 || currentMessages > 3)
+			{
+				socket.emit("sys-message", {message: "Please don't spam/flood the chat."});
+				currentCharacters = Math.min(600, currentCharacters);
+				currentMessages = Math.min(6, currentMessages);
+			}
+			else
+			{
+				ipc.emit("message",{type: "chat", socket_id: socket.id, data: {message: data.message}});
+			}
+			if (reduceMsgInterval === null)
+			{
+				reduceMsgInterval = setInterval(
+				function(){
+					currentCharacters -= 60;
+					currentMessages -= 1;
+					currentCharacters = Math.max(0, currentCharacters);
+					currentMessages = Math.max(0, currentMessages);
+					if (currentCharacters == 0 && currentMessages == 0)
+					{
+						clearInterval(reduceMsgInterval);
+						reduceMsgInterval = null;
+					}
+				},1000);
+			}
+		}
+
+	});
+	var queue = commandQueue.create(6);
+	socket.on('command', function(data)
+	{
+		queue.addCommand();
+		if (queue.checkFlood()) //too many commands
+		{
+			socket.emit('sys-message', { message: "Too many commands. Disconnected."});
+			socket.emit("request-disconnect");
+			socket.disconnect();
+			return;
+		}
+		if (joinEmitted){
+			ipc.emit("message",{type: "command", socket_id: socket.id, data: {data: data}});
+		}
+	});
+});
