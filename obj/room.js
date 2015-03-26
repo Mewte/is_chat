@@ -1,4 +1,5 @@
 var fs = require('fs');
+var db = require("../modules/db");
 var Socket = require("../modules/socket");
 function room(roomName)
 {
@@ -38,7 +39,6 @@ function room(roomName)
 	this.autosave = null; //auto save playlist interval
 	this.playlistSaveNeeded = false; //if playlist is modified, save on next interval tick.
 	this.saveInterval = 300000; //5 minutes
-	this.playlistLoading = false; //don't let users join if loading playlist.
 
 	this.playlist.move = function (old_index, new_index) //Code is property of Reid from stackoverflow
 	{
@@ -61,13 +61,6 @@ room.prototype.tryJoin = function(socket)
 			socket.disconnect();
 			return;
 		}
-	}
-	if (this.playlistLoading)
-	{
-		console.log("Playlist is still loading..");
-		socket.emit("sys-message", { message: "Playlist is still loading. Please refresh."});
-		socket.disconnect();
-		return;
 	}
 	if (socket.info.username.toLowerCase() == "unnamed")
 	{
@@ -634,22 +627,22 @@ room.prototype.savePlaylist = function()
 		});
 	}
 };
-room.prototype.loadPlaylist = function(callback)
-{
+room.prototype.loadPlaylist = function(callback){
 	var thisRoom = this; //because you can't use this in a callback function
 	var filename = "playlistdump/" + this.roomName.toLowerCase() + ".playlist";
-	this.playlistLoading = true; //make sure no one can join while this is going.
 	fs.exists(filename, function(exists){
 		if (exists)
 		{
 			fs.readFile(filename, function (err, data) {
-				if (err) throw err;
-				thisRoom.playlistLoading = false; //allow users to join now
+				if (err){
+					return callback(err);
+				}
 				var playlist = null;
 				try {
 					playlist = JSON.parse(data)
 				} catch(e) {
-					console.log("JSON from playlist invalid?"); return;
+					console.log("JSON from playlist invalid?");
+					return callback(false); //if playlist json is corrupted, owell, maybe add logging in the future to see why it failed
 				}
 				thisRoom.playlist = playlist;
 				thisRoom.playlist.move = function (old_index, new_index) //Code is property of Reid from stackoverflow
@@ -662,18 +655,16 @@ room.prototype.loadPlaylist = function(callback)
 					}
 					this.splice(new_index, 0, this.splice(old_index, 1)[0]);
 				};
-				//chat_room.sockets.in(this.roomName).emit('playlist', {playlist: thisRoom.playlist});
+				return callback(false);
 			});
 		}
-		else //no playlist
-		{
-			thisRoom.playlistLoading = false; //allow users to join now
+		else{
+			return callback(false);
 		}
 	});
 };
 //---
-function poll(poll)
-{
+function poll(poll){
 	this.data = new Object();
 	this.data.title = poll.title;
 	this.data.options = new Array();
@@ -682,23 +673,20 @@ function poll(poll)
 		this.data.options[i] = {option: poll.options[i], votes: 0};
 	}
 }
-poll.prototype.addVote = function(vote)
-{
+poll.prototype.addVote = function(vote){
 	if (vote >= 0 && vote < this.data.options.length)
 	{
 		this.data.options[vote].votes++;
 	}
 };
-poll.prototype.removeVote = function(vote)
-{
+poll.prototype.removeVote = function(vote){
 	if (vote >= 0 && vote < this.data.options.length)
 	{
 		this.data.options[vote].votes--;
 	}
 };
 
-module.exports.create = function(roomName,callback)
-{
+module.exports.create = function(roomName,callback){
 	var thisroom = new room(roomName);
 	thisroom.loadPlaylist(callback);
 	return thisroom;

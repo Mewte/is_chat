@@ -17,6 +17,7 @@
   },
   "homepage": "https://github.com/Mewte/is_chat",
   "dependencies": {
+    "bluebird": "^2.9.14",
     "knex": "^0.7.3",
     "mysql": "^2.5.4",
     "n-vimeo": "^0.3.0",

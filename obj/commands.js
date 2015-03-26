@@ -5,7 +5,7 @@ var parser = require("./parsers");
 var youtube = require('youtube-feeds');
 var Socket = require("../modules/socket");
 var video = require('n-vimeo').video;
-
+var db = require("../modules/db");
 //Array.prototype.isArray = true; //use to check if variable is an array - WHY DOES THIS ALWAYS BREAK EVERYTHING
 
 module.exports.commands = 

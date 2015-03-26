@@ -3,7 +3,6 @@
  * Clients -> Socket.IO Clusters -> Server Core(THIS APPLICATION)
  */
 var config = require("../config");
-var request = require("request");
 var commands = require("../obj/commands");
 var room = require("../obj/room");
 var Socket = require("../modules/socket");
@@ -12,21 +11,8 @@ var crypto = require('crypto');
 var fs = require('fs');
 var EventEmitter = require("events").EventEmitter;
 var events = new EventEmitter();
-global.db = require('knex')({
-	client: 'mysql',
-	connection: {
-		host     : config.db.host,
-		user     : config.db.user,
-		password : config.db.pass,
-		database : config.db.name
-	},
-	pool:{
-		min: 2,
-		max: 10
-	}
-});
+var db = require("../modules/db");
 
-global.phploc = config.chat.phploc;
 process.on('uncaughtException', function (error) {
 	console.log("UNHANDLED ERROR! Logged to file.");
 	throw (error)
@@ -67,7 +53,7 @@ io.on('connection', function(ipc_client){
 					{
 						username: msg.handshake.username,
 						cookie: msg.handshake.cookie,
-						room: msg.handshake.room,
+						room: msg.handshake.room.toLowerCase(),
 						ip: msg.handshake.ip
 					}
 				);
@@ -78,9 +64,6 @@ io.on('connection', function(ipc_client){
 			}
 		}
 		else{
-			if (clusters[ipc_client.id][msg.socket_id] == -1){
-				return;
-			}
 			socket = clusters[ipc_client.id][msg.socket_id];
 		}
 		switch(msg.type)
@@ -126,86 +109,70 @@ io.on('connection', function(ipc_client){
 });
 function join(socket){
 	if (!socket.joined){
-		var roomname = socket.handshake.room.toLowerCase();
-		if (rooms[roomname] == undefined) //room not in memory
+		var roomname = socket.handshake.room;
+		if (rooms[roomname] == undefined || rooms[roomname == "loading"]) //room not in memory or loading
 		{
-			request.post(phploc + 'data/roominfo.php', {form:{ room: roomname}}, function(e, r, msg)
-			{
-				try {var result = JSON.parse(msg)} catch(e) {console.log("Room JSON not valid?"); return;}
-				if (result.error == undefined )
-				{
-					if (rooms[roomname] == undefined) //check to be sure the room is still undefined
-					{
-						rooms[roomname] = room.create(roomname);
-						socket.emit("sys-message",{ message: "Room loaded into memory, refresh page."});
-						socket.disconnect();
+			if (rooms[roomname] == undefined){
+				db.select().from("rooms").where({room_name:roomname}).then(function(rows){
+					if (rows.length == 0){
+						delete rooms[roomname];
+						events.emit("room_ready:"+roomname,true);
 					}
-					else
-					{
-						socket.emit("sys-message", { message: "Room is stil loading, refresh page."});
-						socket.disconnect();
+					else{
+						var roomObj = room.create(roomname, function(err){
+							if (err != false){
+								delete rooms[roomname];
+								events.emit("room_ready:"+roomname,true);
+							}
+							else{ //room is ready, all users waiting for it can now join
+								rooms[roomname] = roomObj;
+								events.emit("room_ready:"+roomname,false);
+							}
+						});
 					}
-				}
-				else
-				{
-					socket.emit("sys-message", { message: "This room does not exist."});
+				}).catch(function(e){
+					delete rooms[roomname];
+					events.emit("room_ready:"+roomname,true);
+				});
+				rooms[roomname] = "loading";
+			}
+			socket.emit("sys-message",{message:"Loading room.."});
+			events.once('room_ready:'+roomname,function(err){
+				if (err != false){
+					socket.emit("sys-message", { message:"Error connecting to room. Please try again."});
 					socket.disconnect();
 				}
+				else{//join room
+					socket.parseUser().then(function(){
+						if (rooms[roomname] && socket.stillExists()) //just to be sure it exists I guess? and that sockets still connected?
+							rooms[socket.info.room].tryJoin(socket);
+					}).catch(function(err){
+						if (err.type == "banned"){
+							socket.emit("sys-message", { message:"You are banned from this room."});
+							socket.disconnect();
+						}
+						else{
+							socket.emit("sys-message", { message:"Error connecting to room. Please try again."});
+							socket.disconnect();
+						}
+					});
+				}
 			});
-			db.select().from("rooms").where({room_name:roomname}).then(function(room){
-				if (room.length == 0){
-					socket.emit("sys-message", { message: "This room does not exist."});
+		}
+		else{ //room in memory
+			socket.parseUser().then(function(){
+				if (rooms[roomname] && socket.stillExists()) //just to be sure it exists I guess? and that sockets still connected?
+					rooms[socket.info.room].tryJoin(socket);
+			}).catch(function(err){
+				if (err.type == "banned"){
+					socket.emit("sys-message", { message:"You are banned from this room."});
 					socket.disconnect();
 				}
 				else{
-					if (rooms[roomname] == undefined){ //make sure room hasn't loaded
-						rooms[roomname] = room.create(roomname, function(err){
-							if (err){
-
-							}
-							else{ //room is ready, all users waiting for it can now join
-								
-							}
-						});	
-					}
+					socket.emit("sys-message", { message:"Error connecting to room. Please try again."});
+					socket.disconnect();
 				}
-			}).catch(function(e){
-
 			});
-		}
-		else //room in memory
-		{
-			request.post(phploc + 'data/parseuser.php',
-				{
-					form:{
-						username: socket.handshake.username,
-						cookie: socket.handshake.cookie,
-						ip: socket.handshake.ip,
-						room: roomname}
-				},
-				function(e, r, msg)
-				{
-					if (clusters[socket.cluster_id][socket.socket_id] == undefined) //if the socket disconnected by the time this runs, stop
-						return;
-					try {var response = JSON.parse(msg); } catch(ex) {console.log("JSON from parseuser.php not valid?" + e +"response:"+ msg); return;}
-					if (response.error)
-					{
-						socket.emit("sys-message", { message: response.error});
-						socket.disconnect();
-					}
-					else
-					{
-						var hashedIp = crypto.createHash('md5').update("Random Salt Value: $33x!20" + socket.handshake.ip).digest("hex").substring(0, 11);
-						var hashedId = crypto.createHash('md5').update("RandomTest"+socket.socket_id).digest("hex");
-						socket.info = {username: response.user.username, permissions: response.user.permissions, room: roomname,
-									   loggedin: response.user.loggedin, ip: socket.handshake.ip, hashedIp: hashedIp,hashedId: hashedId,
-									   skipped: false, voteinfo: {voted: false, option: null}};
-						if (rooms[socket.info.room] != undefined)
-						{
-							rooms[socket.info.room].tryJoin(socket);
-						}
-					}
-				});
 		}
 	}
 }
@@ -226,16 +193,9 @@ function disconnect(socket){
 			rooms[socket.info.room].leave(socket);
 		}
 	}
-	/*
-	set it to -1 so we know it's being cleaned up.
-	I fear that if we don't, there's a chance that sockets.js might send a message shortly after 
-	even though it's considered 'disconnected', due to the async nature of node.js messages.
-	*/
-	clusters[socket.cluster_id][socket.socket_id] = -1;
-	setTimeout(function(){
-		if (clusters[socket.cluster_id])
-			delete clusters[socket.cluster_id][socket.socket_id];
-	},10000);
+	socket.disconnected = true;
+	if (clusters[socket.cluster_id])
+		delete clusters[socket.cluster_id][socket.socket_id];
 }
 function message(socket, message){
 	if (socket.joined && socket.info.username.toLowerCase() != "unnamed")

@@ -71,9 +71,10 @@ ipc.on('message', function(msg,callback){
 });
 ipc.on('disconnect',function(){
 	console.log("Disconnected from IPC!");
-	for (var socketID in io.sockets.connected){
-		io.sockets.connected[socketID].emit('request-disconnect');
-	};
+	io.emit("sys-message",{message:"IPC connection to chat server lost. We will attempt to reconnect when it is back online.."});
+//	for (var socketID in io.sockets.connected){
+//		io.sockets.connected[socketID].emit('request-disconnect');
+//	};
 	status = 0;
 });
 ipc.on('connect_error', function(){
@@ -106,13 +107,13 @@ io.on('connection', function(socket) {
 					ipc.emit("message",{type: "join",socket_id: socket.id,handshake: socket.info});
 				}
 				else{ //put user in queue and trigger event when IPC comes back online
-					socket.emit("sys-message",{message:"Could not connect to central chat server. Please try again."});
-					events.once("ipc_connected",function(){
-						if (socket.connected){ //be sure socket is still connected
-							ipc.emit("message",{type: "join",socket_id: socket.id,handshake: socket.info});
-						}
-					});
+					socket.emit("sys-message",{message:"Could not connect to central chat server."});
 				}
+				events.on("ipc_connected",function(){
+					if (socket.connected){ //be sure socket is still connected
+						ipc.emit("message",{type: "join",socket_id: socket.id,handshake: socket.info});
+					}
+				});
 			}
 		}
 		joinEmitted = true;
