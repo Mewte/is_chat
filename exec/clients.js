@@ -5,11 +5,11 @@
 var commandQueue = require("../obj/commandQueue");
 var config = require("../config");
 var client = require("socket.io-client");
-//process.on('uncaughtException', function (error) {
-//	//console.log("UNHANDLED ERROR! Logged to file.");
-//	throw (error);
-//	//fs.appendFile("crashlog.txt", error.stack + "---END OF ERROR----", function () {});
-//});
+process.on('uncaughtException', function (error) {
+	console.log(jsonFriendlyError(error));
+	console.log("UNHANDLED ERROR! Logged to file.");
+	fs.appendFile("clients_crashlog.txt", error.stack + "---END OF ERROR----", function () {});
+});
 
 var EventEmitter = require("events").EventEmitter;
 var events = new EventEmitter();
@@ -76,6 +76,11 @@ ipc.on('disconnect',function(){
 //		io.sockets.connected[socketID].emit('request-disconnect');
 //	};
 	status = 0;
+});
+ipc.on('error_occured', function(){ //chat server encountered an exception and disconnected us.
+	setTimeout(function(){
+		ipc.connect();
+	}, 1000)
 });
 ipc.on('connect_error', function(){
 	console.log("connect_error");
@@ -192,3 +197,10 @@ io.on('connection', function(socket) {
 		}
 	});
 });
+function jsonFriendlyError(err, filter, space) {
+	var plainObject = {};
+	Object.getOwnPropertyNames(err).forEach(function (key) {
+		plainObject[key] = err[key];
+	});
+	return plainObject;
+}

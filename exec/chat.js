@@ -14,9 +14,9 @@ var events = new EventEmitter();
 var db = require("../modules/db");
 
 process.on('uncaughtException', function (error) {
+	console.log(jsonFriendlyError(error));
 	console.log("UNHANDLED ERROR! Logged to file.");
-	throw (error)
-	//fs.appendFile("crashlog.txt", error.stack + "---END OF ERROR----", function () {});
+	fs.appendFile("chat_crashlog.txt", error.stack + "---END OF ERROR----", function () {});
 });
 //object table, clusters is an object of clusters which are objects of sockets.
 var webServer = require('http').createServer(function (req, res) {
@@ -102,9 +102,9 @@ io.on('connection', function(ipc_client){
 		delete clusters[ipc_client.id];
 	});
 	ipc_client.on("error", function(e){
-		console.log(jsonFriendlyError(e));
 		ipc_client.emit("error_occured",{});//emit that an error occured, giving the socket a chance to cleanly end itself (and reconnect)
 		ipc_client.disconnect();
+		throw e;
 	});
 });
 function join(socket){
