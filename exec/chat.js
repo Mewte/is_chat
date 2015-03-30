@@ -16,7 +16,7 @@ var db = require("../modules/db");
 process.on('uncaughtException', function (error) {
 	console.log(jsonFriendlyError(error));
 	console.log("UNHANDLED ERROR! Logged to file.");
-	fs.appendFile("chat_crashlog.txt", error.stack + "---END OF ERROR----", function () {});
+	fs.appendFile("chat_crashlog.log", error.stack + "---END OF ERROR----", function () {});
 });
 //object table, clusters is an object of clusters which are objects of sockets.
 var webServer = require('http').createServer(function (req, res) {

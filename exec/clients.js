@@ -5,10 +5,12 @@
 var commandQueue = require("../obj/commandQueue");
 var config = require("../config");
 var client = require("socket.io-client");
+var os = require("os");
+var fs = require('fs');
 process.on('uncaughtException', function (error) {
 	console.log(jsonFriendlyError(error));
 	console.log("UNHANDLED ERROR! Logged to file.");
-	fs.appendFile("clients_crashlog.txt", error.stack + "---END OF ERROR----", function () {});
+	fs.appendFile("clients_crashlog.log", error.stack + "---END OF ERROR----", function () {});
 });
 
 var EventEmitter = require("events").EventEmitter;
@@ -88,12 +90,30 @@ ipc.on('connect_error', function(){
 ipc.on('connect_timeout',function(){
 	console.log('connect_timeout');
 });
-var webServer = require('http').createServer(function (req, res) {
-	res.writeHead(404);
-	res.end("No resource found.");
-});
+//var webServer = require('http').createServer(function (req, res) {
+//	res.writeHead(404);
+//	res.end("No resource found.");
+//});
+
+//var express = require('express');
+//var http = require('http');
+//var webServer = http.createServer(express);
+//express.get('/',function(){
+//	res.send('hi');
+//});
+var app = require('express')();
+var webServer = require('http').Server(app);
+var io = require('socket.io')(webServer);
+
 webServer.listen(8080);
-io = require('socket.io')(webServer);
+
+app.use("*",function(req,res,next){
+	res.header('server',os.hostname());
+	res.send("No resource found.")
+});
+io.use(function(socket, next,a){
+	next();
+});
 io.on('connection', function(socket) {
 	var ip = socket.client.request.headers['cf-connecting-ip'] || socket.client.conn.remoteAddress;
 	var joinEmitted = false;
