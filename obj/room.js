@@ -38,7 +38,9 @@ function room(roomName)
 	this.playTimeout = null;
 	this.autosave = null; //auto save playlist interval
 	this.playlistSaveNeeded = false; //if playlist is modified, save on next interval tick.
-	this.saveInterval = 300000; //5 minutes
+	this.saveInterval = Math.floor((Math.random() * 300000) + 300000) //between 5 and 10 minutes, thsi stops every room from saving at the exact same time
+
+	this.lastShuffle = 0; //the last shuffle, use this to limit how often shuffling happens
 
 	this.playlist.move = function (old_index, new_index) //Code is property of Reid from stackoverflow
 	{
@@ -312,18 +314,15 @@ room.prototype.setMOTD = function(MOTD)
 	this.MOTD = MOTD;
 	Socket.toRoom(this.roomName, "sys-message", {message: this.MOTD});
 };
-room.prototype.isLeader = function(hashedId)
-{
+room.prototype.isLeader = function(hashedId){
 	return (hashedId === this.leader);
 }
-room.prototype.makeLead = function(hashedId)
-{
+room.prototype.makeLead = function(hashedId){
 	this.leader = hashedId;
 	Socket.toRoom(this.roomName,"room-event", {action: "leader", userId: this.leader});
 }
 //player
-room.prototype.start = function()
-{ 6
+room.prototype.start = function(){
 	this.resetSkips();
 	if (this.nowPlaying.info === null) //not playing anything
 	{
@@ -344,14 +343,12 @@ room.prototype.start = function()
 		Socket.toRoom(this.roomName, "resume", {time: this.time()});
 	}
 };
-room.prototype.stop = function()
-{ 
+room.prototype.stop = function(){ 
 	this.nowPlaying.stoppedTime = this.time();
 	this.playing = false;
 	clearTimeout(this.playTimeout);
 };
-room.prototype.nextVid = function()
-{
+room.prototype.nextVid = function(){
 	if (this.nowPlaying.info !== null)
 	{
 		var indexOfVid = this.indexOfVid(this.nowPlaying.info);
@@ -371,8 +368,7 @@ room.prototype.nextVid = function()
 		this.updateRoomInfo();
 	}
 };
-room.prototype.addVideo = function(vidinfo)
-{
+room.prototype.addVideo = function(vidinfo){
 	if (this.indexOfVid(vidinfo.info) != -1)
 	{
 		return "Video is already in playlist.";
@@ -391,8 +387,7 @@ room.prototype.addVideo = function(vidinfo)
 		return "Video added successfully.";
 	}
 };
-room.prototype.removeVideo = function(vidinfo, single)
-{  
+room.prototype.removeVideo = function(vidinfo, single){  
 	var index = this.indexOfVid(vidinfo);
 	if (index > -1)
 	{
@@ -418,8 +413,7 @@ room.prototype.removeVideo = function(vidinfo, single)
 		}
 	}
 };
-room.prototype.moveVideo = function(vidinfo, position)
-{
+room.prototype.moveVideo = function(vidinfo, position){
 	if (position > -1 && position < this.playlist.length)
 	{
 		var vidPosition = this.indexOfVid(vidinfo);
@@ -431,8 +425,7 @@ room.prototype.moveVideo = function(vidinfo, position)
 		}
 	}
 };
-room.prototype.purge = function(username) //this purge is very inefficient as it requires extra loops per keycode, TODO; FIx that
-{
+room.prototype.purge = function(username){ //this purge is very inefficient as it requires extra loops per keycode, TODO; FIx that
 	var videos = new Array();
 	for (var i = this.playlist.length - 1; i > -1; i--) //loop backwards (length-1) to 0
 	{
@@ -482,8 +475,7 @@ room.prototype.togglePlaylistLock = function()
 };
 //--
 //skips
-room.prototype.resetSkips = function()
-{
+room.prototype.resetSkips = function(){
 	for (var i = 0; i < this.users.length; i++)
 	{
 		var user = clusters[this.users[i].cluster_id][this.users[i].id];
@@ -496,18 +488,15 @@ room.prototype.resetSkips = function()
 	this.totalSkips = 0;
 	this.updateSkips();
 };
-room.prototype.addSkip = function()
-{
+room.prototype.addSkip = function(){
 	this.totalSkips++;
 	this.updateSkips();
 };
-room.prototype.removeSkip = function()
-{
+room.prototype.removeSkip = function(){
 	this.totalSkips--;
 	this.updateSkips();
 };
-room.prototype.updateSkips = function()
-{
+room.prototype.updateSkips = function(){
 	this.skipsNeeded = Math.ceil(this.numberOfRegisteredUsers * this.skipThreshold);
 	Socket.toRoom(this.roomName, "skips", {skips: this.totalSkips, skipsneeded: this.skipsNeeded});
 	if ((this.skipsNeeded > 0) && this.totalSkips >= this.skipsNeeded) //dont evalulate if 0/0
@@ -515,15 +504,13 @@ room.prototype.updateSkips = function()
 			this.nextVid();
 	}
 };
-room.prototype.setSkip = function(decimal)
-{
+room.prototype.setSkip = function(decimal){
 	this.skipThreshold = decimal;
 	this.updateSkips();
 };
 //--
 //player actions
-room.prototype.seekTo = function(time)
-{
+room.prototype.seekTo = function(time){
 	if (time >= 0 && time < this.nowPlaying.duration)
 	{
 		if (this.playing)
@@ -538,13 +525,11 @@ room.prototype.seekTo = function(time)
 		Socket.toRoom(this.roomName, "seekTo", {time: time});
 	}
 };
-room.prototype.seekFrom = function(time)
-{
+room.prototype.seekFrom = function(time){
 	var newtime = this.time() + time;
 	return this.seekTo(newtime);
 };
-room.prototype.play = function(info)
-{
+room.prototype.play = function(info){
 	var position = this.indexOfVid(info);
 	if (position > -1 && position < this.playlist.length)
 	{
@@ -556,16 +541,14 @@ room.prototype.play = function(info)
 		Socket.toRoom(this.roomName, "play", {info: this.nowPlaying.info, time: this.time(), playing: this.playing});
 	 }
 };
-room.prototype.pause = function()
-{
+room.prototype.pause = function(){
 	if (this.playing)
 	{
 		this.stop();
 		Socket.toRoom(this.roomName, "pause", {});
 	}
 };
-room.prototype.resume = function()
-{
+room.prototype.resume = function(){
 	if (!this.playing)
 	{
 		this.start();
@@ -574,8 +557,8 @@ room.prototype.resume = function()
 };
 //--
 //Polls
-room.prototype.createPoll = function(info) //poll.data = {title = string, options = {option, votes}}
-{
+room.prototype.createPoll = function(info){ //poll.data = {title = string, options = {option, votes}}
+
 	if (this.poll != null)
 	{
 		this.endPoll();
@@ -583,8 +566,7 @@ room.prototype.createPoll = function(info) //poll.data = {title = string, option
 	this.poll = new poll(info);
 	Socket.toRoom(this.roomName, "room-event", {action: "poll-create", poll: this.poll.data});
 };
-room.prototype.endPoll = function()
-{
+room.prototype.endPoll = function(){
 	if (this.poll != null)
 	{
 		this.poll = null;
@@ -600,16 +582,14 @@ room.prototype.endPoll = function()
 		Socket.toRoom(this.roomName, "room-event", {action: "poll-end"});
 	}
 };
-room.prototype.addPollVote = function(vote)
-{
+room.prototype.addPollVote = function(vote){
 	if (this.poll != null)
 	{
 		this.poll.addVote(vote);
 		Socket.toRoom(this.roomName,"room-event",{action: "poll-addVote", option: vote});
 	}
 };
-room.prototype.removePollVote = function(vote)
-{
+room.prototype.removePollVote = function(vote){
 	if (this.poll != null)
 	{
 		this.poll.removeVote(vote);
@@ -617,6 +597,21 @@ room.prototype.removePollVote = function(vote)
 	}
 };
 //playlist dump
+room.prototype.shufflePlaylist = function(){
+	if (this.playlist.length > 0){
+		var playlist = this.playlist;
+		var l = playlist.length; //cache length
+		for (var i = l - 1; i > 0; i--) {
+			var j = Math.floor(Math.random() * (i + 1));
+			var temp = playlist[i];
+			playlist[i] = playlist[j];
+			playlist[j] = temp;
+		}
+		this.lastShuffle = new Date().getTime() / 1000;
+		//send new playlist to users
+		Socket.toRoom(this.roomName, "shuffled", {playlist: this.playlist});
+	}
+};
 room.prototype.savePlaylist = function()
 {
 	if (this.playlist.length > 0)
@@ -641,6 +636,7 @@ room.prototype.loadPlaylist = function(callback){
 				try {
 					playlist = JSON.parse(data)
 				} catch(e) {
+					console.log(e);
 					console.log("JSON from playlist invalid?");
 					return callback(false); //if playlist json is corrupted, owell, maybe add logging in the future to see why it failed
 				}

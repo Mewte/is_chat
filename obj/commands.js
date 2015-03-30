@@ -471,6 +471,18 @@ module.exports.commands =
 				Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " moved a video."});
 			}
 		},
+		"shuffle":function(data,socket){
+			if (socket.info.permissions > 0){
+				var now = new Date().getTime() / 1000;
+				if (now > rooms[socket.info.room].lastShuffle + 30){
+					rooms[socket.info.room].shufflePlaylist();
+					socket.emit("sys-message",{message:"Playlist shuffled."});
+				}
+				else{
+					socket.emit("sys-message",{message:"The playlist can only be shuffled every 30 seconds."});
+				}
+			}
+		},
 		"clean":function(data, socket){
 			if (socket.info.permissions > 0)
 			{
