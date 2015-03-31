@@ -108,7 +108,7 @@ var io = require('socket.io')(webServer);
 webServer.listen(8080);
 
 app.use("*",function(req,res,next){
-	res.header('server',os.hostname());
+	res.header('hostname',os.hostname());
 	res.send("No resource found.")
 });
 io.use(function(socket, next,a){
