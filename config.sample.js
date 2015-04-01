@@ -16,5 +16,8 @@ module.exports = {
 		pass:"",
 		name:"instasynch"
 	},
-	logging: true
+	logging:{
+		enabled:true,
+		level: 1
+	}
 };
