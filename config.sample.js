@@ -15,5 +15,6 @@ module.exports = {
 		user:"root",
 		pass:"",
 		name:"instasynch"
-	}
+	},
+	logging: true
 };
