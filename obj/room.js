@@ -299,11 +299,11 @@ room.prototype.rename = function(socket, newname)
 		Socket.toRoom(this.roomName, "rename", {username: newname, id: socket.info.hashedId});
 	}
 };
-room.prototype.indexOfVid = function(vidinfo)
-{
-	for (var i = 0; i < this.playlist.length; i++)
-	{
-		if (JSON.stringify(this.playlist[i].info) === JSON.stringify(vidinfo))//properties must be in the same order
+room.prototype.indexOfVid = function(vidinfo){
+	for (var i = 0; i < this.playlist.length; i++){
+		var a = this.playlist[i].info;
+		var b = vidinfo;
+		if (a.provider == b.provider && a.mediaType == b.mediaType && a.id == b.id && a.channel == b.channel)//properties must be in the same order
 		{
 			return i;
 		}

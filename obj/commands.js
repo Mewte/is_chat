@@ -2,7 +2,11 @@
 //Also, Alot of problems with comparisons.. using parseInt(num,10) for alot of stuff to be sure they're getting casted properly
 //I.E. 10 is not greater than 0, but 9 is?
 var parser = require("./parsers");
-var youtube = require('youtube-feeds');
+
+var yt = require('youtube-node');
+var Youtube = new yt();
+Youtube.setKey("AIzaSyAeh6mQ9y2qV1OARN04Z1NKfHDifSlblQs");
+
 var Socket = require("../modules/socket");
 var video = require('n-vimeo').video;
 var db = require("../modules/db");
@@ -45,41 +49,45 @@ module.exports.commands =
 					var vidinfo = parser.parseURL(data.URL);
 					if (vidinfo)
 					{
-						if (vidinfo.provider === "youtube")
-						{
-							youtube.video(vidinfo.id).details(function( err, data ) {
-							if( err instanceof Error )
-							{
-								logger.log("Failed to add video error: " + err.message);
-								socket.emit('sys-message', {message: 'Failed to add video.. :-/'});
-							}
-							else
-							{
-								if (data.accessControl.embed != 'allowed')
+						if (vidinfo.provider === "youtube"){
+							Youtube.getById(vidinfo.id,function( err, data ) {
+								if(err)
 								{
-									socket.emit('sys-message', {message: 'That video does not allow embeding.'});
+									logger.log("Failed to add video error: " + err.message);
+									socket.emit('sys-message', {message: 'Failed to add video.. :-/'});
 								}
 								else
 								{
-									if (data.duration === 0)
-										data.duration = 86400; //It's a live stream, make it 24 hours
-									var info =
-									{
-										info:
-										{
-											provider: vidinfo.provider,
-											mediaType: vidinfo.mediaType,
-											id: vidinfo.id,
-											channel: vidinfo.channel,
-											thumbnail: "https://img.youtube.com/vi/" + vidinfo.id + "/0.jpg"
-										},
-										addedby: socket.info.username,
-										duration: data.duration,
-										title: parser.replaceTags(data.title)
+									if (data.items.length > 0){
+										var vid = data.items[0];
+										if (vid.status.embeddable != true){
+											socket.emit('sys-message', {message: 'That video does not allow embeding.'});
+										}
+										else{
+											var duration = parser.parseYTDuration(vid.contentDetails.duration)
+											if (duration === 0)
+												duration = 86400; //It's a live stream, make it 24 hours
+											var info =
+											{
+												info:
+												{
+													provider: vidinfo.provider,
+													mediaType: vidinfo.mediaType,
+													id: vidinfo.id,
+													channel: vidinfo.channel,
+													thumbnail: "https://img.youtube.com/vi/" + vidinfo.id + "/0.jpg"
+												},
+												addedby: socket.info.username,
+												duration: duration,
+												title: parser.replaceTags(vid.snippet.title + "<hi>")
+											};
+											socket.emit('sys-message', {message: rooms[socket.info.room].addVideo(info)});
+										}
 									}
-									socket.emit('sys-message', {message: rooms[socket.info.room].addVideo(info)});
-								}
-							}
+									else{
+										socket.emit('sys-message', {message: 'Video not found.'});
+									}
+								};
 							});
 						}
 						else if (vidinfo.provider === "vimeo")

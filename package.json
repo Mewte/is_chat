@@ -25,6 +25,6 @@
     "request": "^2.53.0",
     "socket.io": "^1.3.4",
     "socket.io-client": "^1.3.5",
-    "youtube-feeds": "^2.3.0"
+    "youtube-node": "^1.2.0"
   }
 }
