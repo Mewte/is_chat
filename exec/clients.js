@@ -7,9 +7,11 @@ var config = require("../config");
 var client = require("socket.io-client");
 var os = require("os");
 var fs = require('fs');
+var logger = require("../modules/logger");
+
 process.on('uncaughtException', function (error) {
-	console.log(jsonFriendlyError(error));
-	console.log("UNHANDLED ERROR! Logged to file.");
+	logger.log(jsonFriendlyError(error));
+	logger.log("UNHANDLED ERROR! Logged to file.");
 	fs.appendFile("clients_crashlog.log", error.stack + "---END OF ERROR----", function () {});
 });
 
@@ -24,10 +26,10 @@ ipc = client.connect('http://'+config.sockets.ipc.host+':'+config.sockets.ipc.po
 });
 var status = 0; //if status is true, sockets can connect, if 0 then no they cannot connect
 ipc.on('connect',function() {
-	console.log("Connected to IPC!");
+	logger.log("Connected to IPC!");
 	ipc.emit("online",{},function(response){
 		if (response.status == "ok"){
-			console.log("Spawning Server..")
+			logger.log("Spawning Server..")
 			status = 1;
 			events.emit("ipc_connected");
 		}
@@ -72,7 +74,7 @@ ipc.on('message', function(msg,callback){
 	}
 });
 ipc.on('disconnect',function(){
-	console.log("Disconnected from IPC!");
+	logger.log("Disconnected from IPC!");
 	io.emit("sys-message",{message:"IPC connection to chat server lost. We will attempt to reconnect when it is back online.."});
 //	for (var socketID in io.sockets.connected){
 //		io.sockets.connected[socketID].emit('request-disconnect');
@@ -85,10 +87,10 @@ ipc.on('error_occured', function(){ //chat server encountered an exception and d
 	}, 1000)
 });
 ipc.on('connect_error', function(){
-	console.log("connect_error");
+	logger.log("connect_error");
 });
 ipc.on('connect_timeout',function(){
-	console.log('connect_timeout');
+	logger.log('connect_timeout');
 });
 //var webServer = require('http').createServer(function (req, res) {
 //	res.writeHead(404);

@@ -12,10 +12,11 @@ var fs = require('fs');
 var EventEmitter = require("events").EventEmitter;
 var events = new EventEmitter();
 var db = require("../modules/db");
+var logger = require("../modules/logger");
 
 process.on('uncaughtException', function (error) {
-	console.log(jsonFriendlyError(error));
-	console.log("UNHANDLED ERROR! Logged to file.");
+	logger.log(jsonFriendlyError(error));
+	logger.log("UNHANDLED ERROR! Logged to file.");
 	fs.appendFile("chat_crashlog.log", error.stack + "---END OF ERROR----", function () {});
 });
 //object table, clusters is an object of clusters which are objects of sockets.
@@ -36,7 +37,6 @@ io.use(function(socket,next){
 io.set('transports', ['websocket']);
 
 io.on('connection', function(ipc_client){
-	console.log(ipc_client.conn.transport.name);
 	ipc_client.on("online",function(data,callback){
 		if (clusters[ipc_client.id] == undefined){
 			clusters[ipc_client.id] = {};
@@ -87,7 +87,7 @@ io.on('connection', function(ipc_client){
 
 	});
 	ipc_client.on("disconnect", function(){
-		console.log("Cluster: "+ipc_client.id+" disconnected!");
+		logger.log("Cluster: "+ipc_client.id+" disconnected!");
 		//clean up all sockets
 		for (var key in clusters[ipc_client.id]){
 			var socket = clusters[ipc_client.id][key];
@@ -147,6 +147,7 @@ function join(socket){
 						if (rooms[roomname] && socket.stillExists()) //just to be sure it exists I guess? and that sockets still connected?
 							rooms[socket.info.room].tryJoin(socket);
 					}).catch(function(err){
+						logger.log(err);
 						if (err.type == "banned"){
 							socket.emit("sys-message", { message:"You are banned from this room."});
 							socket.disconnect();

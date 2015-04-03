@@ -6,6 +6,7 @@ var youtube = require('youtube-feeds');
 var Socket = require("../modules/socket");
 var video = require('n-vimeo').video;
 var db = require("../modules/db");
+var logger = require("../modules/logger");
 //Array.prototype.isArray = true; //use to check if variable is an array - WHY DOES THIS ALWAYS BREAK EVERYTHING
 
 module.exports.commands = 
@@ -49,7 +50,7 @@ module.exports.commands =
 							youtube.video(vidinfo.id).details(function( err, data ) {
 							if( err instanceof Error )
 							{
-								console.log("Failed to add video error: " + err.message);
+								logger.log("Failed to add video error: " + err.message);
 								socket.emit('sys-message', {message: 'Failed to add video.. :-/'});
 							}
 							else
@@ -87,7 +88,7 @@ module.exports.commands =
 							{
 								if(err !== null)
 								{
-									console.log("Failed to add video error: " + err.message);
+									logger.log("Failed to add video error: " + err.message);
 									socket.emit('sys-message', {message: 'Failed to add video.. :-/'});
 								}
 								else

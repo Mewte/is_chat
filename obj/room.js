@@ -1,6 +1,7 @@
 var fs = require('fs');
 var db = require("../modules/db");
 var Socket = require("../modules/socket");
+var logger = require("../modules/logger");
 function room(roomName)
 {
 	this.roomName = roomName;
@@ -193,13 +194,13 @@ room.prototype.join = function(socket)
 			{
 				if (thisRoom.playlistSaveNeeded)
 				{
-					console.log("Auto saving playlist for room: "+thisRoom.roomName);
+					logger.log("Auto saving playlist for room: "+thisRoom.roomName);
 					thisRoom.savePlaylist();
 					thisRoom.playlistSaveNeeded = false;
 					this.autosave = null;
 				}
 				else
-					console.log("no save needed.");
+					logger.log("no save needed.");
 			}, this.saveInterval);//this.saveInterval);
 		}
 	}
@@ -229,7 +230,7 @@ room.prototype.updateRoomInfo = function(){
 	db('rooms').update({users:this.users.length,thumbnail:thumbnail,title: this.nowPlaying.title}).where({room_name: this.roomName}).then(function(){
 
 	}).catch(function(err){
-		console.log(err);
+		logger.log(err);
 	});
 };
 room.prototype.chatmessage = function(socket, message){
@@ -636,8 +637,8 @@ room.prototype.loadPlaylist = function(callback){
 				try {
 					playlist = JSON.parse(data)
 				} catch(e) {
-					console.log(e);
-					console.log("JSON from playlist invalid?");
+					logger.log(e);
+					logger.log("JSON from playlist invalid?");
 					return callback(false); //if playlist json is corrupted, owell, maybe add logging in the future to see why it failed
 				}
 				thisRoom.playlist = playlist;
