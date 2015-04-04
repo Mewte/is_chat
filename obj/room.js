@@ -303,7 +303,7 @@ room.prototype.indexOfVid = function(vidinfo){
 	for (var i = 0; i < this.playlist.length; i++){
 		var a = this.playlist[i].info;
 		var b = vidinfo;
-		if (a.provider == b.provider && a.mediaType == b.mediaType && a.id == b.id && a.channel == b.channel)//properties must be in the same order
+		if (a.provider == b.provider && a.mediaType == b.mediaType && a.id == b.id && a.channel == b.channel)
 		{
 			return i;
 		}

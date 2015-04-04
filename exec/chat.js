@@ -139,6 +139,7 @@ function join(socket){
 			socket.emit("sys-message",{message:"Loading room.."});
 			events.once('room_ready:'+roomname,function(err){
 				if (err != false){
+					logger.log(err);
 					socket.emit("sys-message", { message:"Error connecting to room. Please try again."});
 					socket.disconnect();
 				}
@@ -147,12 +148,12 @@ function join(socket){
 						if (rooms[roomname] && socket.stillExists()) //just to be sure it exists I guess? and that sockets still connected?
 							rooms[socket.info.room].tryJoin(socket);
 					}).catch(function(err){
-						logger.log(err);
 						if (err.type == "banned"){
 							socket.emit("sys-message", { message:"You are banned from this room."});
 							socket.disconnect();
 						}
 						else{
+							logger.log(err);
 							socket.emit("sys-message", { message:"Error connecting to room. Please try again."});
 							socket.disconnect();
 						}
