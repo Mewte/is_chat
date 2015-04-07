@@ -19,8 +19,8 @@ function socket(cluster_id,socket_id,handshake){
 socket.prototype.emit = function(event,data){
 	io.to(this.cluster_id).emit("message",{type:"emit",socket_id: this.socket_id, event:event, data:data});
 };
-socket.prototype.broadcast = function(event,data){
-
+socket.prototype.broadcast = function(room,event,data){
+	io.emit("message",{type:"room_broadcast", socket_id: this.socket_id, room: room, event:event, data:data});
 };
 socket.prototype.disconnect = function(){
 	if (!this.disconnected)

@@ -160,11 +160,8 @@ room.prototype.join = function(socket)
 	socket.emit("userlist", {userlist: this.safeUsers});
 	socket.emit("room-event", {action: "playlistlock", data: this.playListLock});
 	socket.emit("sys-message", {message: this.MOTD});
-	/*
-	 * Make sure this is emitted before the user is apart of the room, otherwise they may get this and add themselves to the userlist twice I guess?
-	 * (if this has issues.. then try out the room_broadcast method, though I can't think of another use for it 3/2/2015
-	 */
-	Socket.toRoom(this.roomName, "add-user", {user: safeUser});
+
+	socket.broadcast(this.roomName, "add-user", {user: safeUser});
 	//--
 	if (this.nowPlaying.info === null)
 	{
