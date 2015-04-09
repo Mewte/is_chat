@@ -9,7 +9,14 @@ module.exports = {
 	 */
 	log:function(data,level){
 		if (config.logging.enabled){
-			console.log(data.toJSON());
+			console.log(jsonFriendlyError(data));
 		}
 	}
+};
+function jsonFriendlyError(err, filter, space) {
+  var plainObject = {};
+  Object.getOwnPropertyNames(err).forEach(function(key) {
+    plainObject[key] = err[key];
+  });
+  return plainObject;
 };
