@@ -110,8 +110,7 @@ io.on('connection', function(ipc_client){
 function join(socket){
 	if (!socket.joined){
 		var roomname = socket.handshake.room;
-		if (rooms[roomname] == undefined || rooms[roomname == "loading"]) //room not in memory or loading
-		{
+		if (rooms[roomname] == undefined || rooms[roomname] == "loading"){ //room not in memory or loading
 			if (rooms[roomname] == undefined){
 				db.select().from("rooms").where({room_name:roomname}).then(function(rows){
 					if (rows.length == 0){
@@ -162,7 +161,6 @@ function join(socket){
 			});
 		}
 		else{ //room in memory
-			logger.log(rooms[roomname]);
 			socket.parseUser().then(function(){
 				if (rooms[roomname] && socket.stillExists()) //just to be sure it exists I guess? and that sockets still connected?
 					rooms[socket.info.room].tryJoin(socket);
