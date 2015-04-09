@@ -171,6 +171,7 @@ function join(socket){
 					socket.disconnect();
 				}
 				else{
+					logger.log(err);
 					socket.emit("sys-message", { message:"Error connecting to room. Please try again."});
 					socket.disconnect();
 				}
