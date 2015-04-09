@@ -162,6 +162,7 @@ function join(socket){
 			});
 		}
 		else{ //room in memory
+			logger.log(rooms[roomname]);
 			socket.parseUser().then(function(){
 				if (rooms[roomname] && socket.stillExists()) //just to be sure it exists I guess? and that sockets still connected?
 					rooms[socket.info.room].tryJoin(socket);

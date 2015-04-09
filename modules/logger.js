@@ -14,9 +14,13 @@ module.exports = {
 	}
 };
 function jsonFriendlyError(err, filter, space) {
-  var plainObject = {};
-  Object.getOwnPropertyNames(err).forEach(function(key) {
-    plainObject[key] = err[key];
-  });
-  return plainObject;
-};
+	if (typeof err !== 'object'){
+		return err;
+	}
+	var plainObject = {};
+	Object.getOwnPropertyNames(err).forEach(function (key) {
+		plainObject[key] = err[key];
+	});
+	return plainObject;
+}
+;
