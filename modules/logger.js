@@ -9,7 +9,7 @@ module.exports = {
 	 */
 	log:function(data,level){
 		if (config.logging.enabled){
-			console.log(data);
+			console.log(data.toJSON());
 		}
 	}
 };
