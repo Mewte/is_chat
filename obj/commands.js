@@ -79,7 +79,7 @@ module.exports.commands =
 												},
 												addedby: socket.info.username,
 												duration: duration,
-												title: parser.replaceTags(vid.snippet.title + "<hi>")
+												title: parser.replaceTags(vid.snippet.title)
 											};
 											socket.emit('sys-message', {message: rooms[socket.info.room].addVideo(info)});
 										}
