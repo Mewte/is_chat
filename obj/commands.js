@@ -20,10 +20,9 @@ module.exports.commands =
 			{
 				if (data.message !== undefined)
 				{
-					//chat_room.sockets.emit('sys-message', {message: data.message});
+					Socket.toAll('sys-message',{message: data.message});
 				}
 			}
-
 		},
 		"reload":function(data, socket){
 			socket.emit('play', {info: rooms[socket.info.room].nowPlaying.info, time: rooms[socket.info.room].time(), playing: rooms[socket.info.room].playing});

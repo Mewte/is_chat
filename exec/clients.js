@@ -41,6 +41,9 @@ ipc.on('message', function(msg,callback){
 		case "emit": //emit to single socket
 			io.to(msg.socket_id).emit(msg.event, msg.data);
 			break;
+		case "emit_all":
+			io.emit(msg.event, msg.data);
+			break;
 		case "room_emit": //all sockets in room
 			io.sockets.in(msg.room).emit(msg.event, msg.data);
 			break;

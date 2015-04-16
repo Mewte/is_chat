@@ -94,4 +94,7 @@ socket.prototype.parseUser = function(){
 socket.toRoom = function(room,event,data){ //socket static function for broadcasting to room
 	io.emit("message",{type:"room_emit", room: room, event:event, data:data});
 };
+socket.toAll = function(event,data){
+	io.emit("message",{type:"emit_all", event:event, data:data});
+};
 module.exports = socket;
