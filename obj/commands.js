@@ -485,6 +485,7 @@ module.exports.commands =
 				if (now > rooms[socket.info.room].lastShuffle + 30){
 					rooms[socket.info.room].shufflePlaylist();
 					socket.emit("sys-message",{message:"Playlist shuffled."});
+					Socket.toRoom(socket.info.room,"log",{message: socket.info.username + " shuffled the playlist."});
 				}
 				else{
 					socket.emit("sys-message",{message:"The playlist can only be shuffled every 30 seconds."});
