@@ -45,6 +45,7 @@ socket.prototype.parseUser = function(){
 			return {username:"unnamed",loggedin:false,permissions:0};
 		}
 		else{ //logged in
+			user = user[0];
 			var permissions = 0;
 			if (user.permissions == null){ //check if room owner
 				if (self.handshake.username.toLowerCase() == self.handshake.room.toLowerCase()) //room owner
