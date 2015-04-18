@@ -11,6 +11,7 @@ var crypto = require('crypto');
 var fs = require('fs');
 var EventEmitter = require("events").EventEmitter;
 var events = new EventEmitter();
+events.setMaxListeners(0);
 var db = require("../modules/db");
 var logger = require("../modules/logger");
 
