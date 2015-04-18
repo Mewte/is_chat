@@ -11,6 +11,9 @@ var Socket = require("../modules/socket");
 var video = require('n-vimeo').video;
 var db = require("../modules/db");
 var logger = require("../modules/logger");
+
+var request = require('request');
+
 //Array.prototype.isArray = true; //use to check if variable is an array - WHY DOES THIS ALWAYS BREAK EVERYTHING
 
 module.exports.commands = 
