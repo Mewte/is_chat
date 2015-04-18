@@ -570,7 +570,7 @@ room.prototype.endPoll = function(){
 		this.poll = null;
 		for (var i = 0; i < this.users.length; i++)
 		{
-			var user = clusters[this.users[i].cluster_id][this.users[i].socket_id];
+			var user = clusters[this.users[i].cluster_id][this.users[i].id];
 			if (user != undefined)
 			{
 				if (user.info.voteinfo.voted === true)
