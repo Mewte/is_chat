@@ -469,7 +469,7 @@ room.prototype.setTimer = function()
 room.prototype.togglePlaylistLock = function()
 {
 	this.playListLock = !(this.playListLock);
-	Socket.toRoom(this.roomName, "playlistlock", this.playListLock);
+	Socket.toRoom(this.roomName, "room-event", {action: "playlistlock", data: this.playListLock});
 };
 //--
 //skips
