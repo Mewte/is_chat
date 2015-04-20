@@ -85,6 +85,7 @@ ipc.on('disconnect',function(){
 	status = 0;
 });
 ipc.on('error_occured', function(){ //chat server encountered an exception and disconnected us.
+	logger.log("error_occured");
 	setTimeout(function(){
 		ipc.connect();
 	}, 1000)
