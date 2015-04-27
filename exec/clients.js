@@ -123,6 +123,11 @@ io.use(function(socket, next,a){
 io.on('connection', function(socket) {
 	var ip = socket.client.request.headers['cf-connecting-ip'] || socket.client.conn.remoteAddress;
 	var joinEmitted = false;
+	var ipc_connected_callback = function(){ //saved as variable so we can clear it from the eventemitter (otherwise it leaks)
+		if (socket.connected){ //be sure socket is still connected
+			ipc.emit("message",{type: "join",socket_id: socket.id,handshake: socket.info});
+		}
+	};
 	socket.on('join', function(data)
 	{
 		if (joinEmitted == false){// this is a one time emit per socket connection
@@ -140,11 +145,7 @@ io.on('connection', function(socket) {
 				else{ //put user in queue and trigger event when IPC comes back online
 					socket.emit("sys-message",{message:"Could not connect to central chat server."});
 				}
-				events.on("ipc_connected",function(){
-					if (socket.connected){ //be sure socket is still connected
-						ipc.emit("message",{type: "join",socket_id: socket.id,handshake: socket.info});
-					}
-				});
+				events.on("ipc_connected",ipc_connected_callback);
 			}
 		}
 		joinEmitted = true;
@@ -168,6 +169,7 @@ io.on('connection', function(socket) {
 	socket.on('disconnect', function(data)
 	{
 		ipc.emit("message",{type: "disconnect", socket_id: socket.id});
+		events.removeListener("ipc_connected",ipc_connected_callback);
 	});
 	var currentCharacters = 0;
 	var currentMessages = 0;
