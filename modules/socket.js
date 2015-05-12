@@ -35,11 +35,11 @@ socket.prototype.stillExists = function(){
 };
 socket.prototype.parseUser = function(){
 	var self = this;
-	return db.select("mods.permissions").from("users").leftJoin('mods',function(){ //checks if user is logged in & mod in one query
-		this.on("users.username","=","mods.username").on("mods.room_name","=",db.raw("?",[self.handshake.room]))
+	return db.select("mods.permissions").from("sessions").leftJoin('mods',function(){ //checks if user is logged in & mod in one query
+		this.on("sessions.username","=","mods.username").on("mods.room_name","=",db.raw("?",[self.handshake.room]))
 	}).where({
-		"users.username":self.handshake.username,
-		"users.cookie":self.handshake.cookie
+		"sessions.username":self.handshake.username,
+		"sessions.cookie":self.handshake.cookie
 	}).then(function(user){
 		if (user.length == 0){//greyname
 			return {username:"unnamed",loggedin:false,permissions:0};
