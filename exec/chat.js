@@ -52,7 +52,7 @@ io.on('connection', function(ipc_client){
 			if (msg.handshake != undefined){
 				socket = new Socket(ipc_client.id,msg.socket_id,
 					{
-						username: msg.handshake.username,
+						username: msg.handshake.username.replace(/[^\x00-\x7F]/g, ""), //strip all unicode and force ascii (since mysql doesnt seem to enforce it)
 						cookie: msg.handshake.cookie,
 						room: msg.handshake.room.toLowerCase(),
 						ip: msg.handshake.ip
