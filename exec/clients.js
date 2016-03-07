@@ -111,7 +111,7 @@ var app = require('express')();
 var webServer = require('http').Server(app);
 var io = require('socket.io')(webServer);
 
-webServer.listen(8080);
+webServer.listen(config.sockets.listen_on);
 
 app.use("*",function(req,res,next){
 	res.header('hostname',os.hostname());
