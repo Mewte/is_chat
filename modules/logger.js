@@ -9,7 +9,21 @@ module.exports = {
 	 */
 	log:function(data,level){
 		if (config.logging.enabled){
-			console.log(jsonFriendlyError(data));
+			var now = new Date();
+			var d = [
+			  now.getFullYear(),
+			  '-',
+			  now.getMonth() + 1,
+			  '-',
+			  now.getDate(),
+			  ' ',
+			  now.getHours(),
+			  ':',
+			  now.getMinutes(),
+			  ':',
+			  now.getSeconds()
+			].join('');
+			console.log(jsonFriendlyError(d+": "+data));
 		}
 	}
 };
