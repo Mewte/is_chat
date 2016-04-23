@@ -18,6 +18,7 @@ function filterUnicode(quoted){
 	return '\uFFFE';
   });
 }
+module.exports.filterUnicode = filterUnicode;
 module.exports.parseYTDuration = function parseYTDuration(duration) {
     var matches = duration.match(/[0-9]+[HMS]/g);
 

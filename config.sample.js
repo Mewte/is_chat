@@ -10,6 +10,15 @@ module.exports = {
 		},
 		listen_on:8080
 	},
+	friends:{
+		redis:{
+			host:"",
+			pass:"",
+			port:6379
+		},
+		server_id: "",
+		listen_on: 8080
+	},
 	db:{
 		host:"localhost",
 		user:"root",
