@@ -23,7 +23,8 @@ module.exports = {
 		host:"localhost",
 		user:"root",
 		pass:"",
-		name:"instasynch"
+		name:"instasynch",
+		debug: false
 	},
 	logging:{
 		enabled:true,

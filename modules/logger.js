@@ -23,7 +23,7 @@ module.exports = {
 			  ':',
 			  now.getSeconds()
 			].join('');
-			console.log(jsonFriendlyError(d+": "+data));
+			console.log(d+": "+JSON.stringify(jsonFriendlyError(data)));
 		}
 	}
 };

@@ -32,10 +32,9 @@ sub.subscribe("cluster_communications");
 
 io.adapter(adapter({ pubClient: pub, subClient: sub }));
 
-
 db("friend_status").where({server_id: config.server_id}).del().then(function(){
 	process.on('uncaughtException', function (error) {
-		logger.log(jsonFriendlyError(error));
+		logger.log(error);
 		logger.log("UNHANDLED ERROR! Logged to file.");
 		fs.appendFile("friends_crashlog.log", error.stack + "---END OF ERROR----", function () {});
 	});
@@ -110,19 +109,19 @@ io.on('connection', function(socket) {
 	});
 	socket.on('get_conversation', function(data, callback){
 		//modify this to return array of messages and someway to know if there's more messages to scroll up
-		if (data.beforeID){ //get messages before certain message ID (pagination)
-			
-		}
+		// if (data.beforeID){ //TODO: get messages before certain message ID (pagination)
+		//
+		// }
 		if (data.user_id){
 			db.select("to_id", "from_id", "message","viewed", db.raw("UNIX_TIMESTAMP(sent) as sent")).from("friend_messages")
 			.where(function(){
 				this.where("to_id",socket._user.user_id).where("from_id",data.user_id);
 			}).orWhere(function(){
 				this.where("from_id",socket._user.user_id).where("to_id",data.user_id);
-			}).orderBy("sent", "asc").then(function(data){
+			}).orderBy("sent", "asc").limit(50).then(function(data){
 				callback({error:false,messages:data,});
 			}).catch(function(err){
-
+				callback()
 			});
 		}
 	});
@@ -166,8 +165,14 @@ io.on('connection', function(socket) {
 						return db("friend_messages").insert({to_id: data.user_id,from_id: socket._user.user_id,message: message});
 					}
 				}).then(function (inserted_id) {
-					//broadcast to all of this users tabs that user sent a message
-					//broadcast to receiver that he has new messages
+					// socket.broadcast.to("userClientsID-"+socket._user.user_id).emit("message_sent",{
+					// 	to_id: 123,
+					// 	message:""
+					// });
+					// io.to("id-"+socket._user.user_id).emit('new_message',{
+					// 	id: socket._user.user_id,
+					// 	username: socket._user.username
+					// });
 					callback({success:true});
 				}).catch(function (err) {
 					if (err == "not_friends"){

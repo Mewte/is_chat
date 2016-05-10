@@ -1,6 +1,6 @@
 var config = require("../config")
 module.exports = require('knex')({
-	debug:true,
+	debug: config.db.debug,
 	client: 'mysql',
 	connection: {
 		host     : config.db.host,
